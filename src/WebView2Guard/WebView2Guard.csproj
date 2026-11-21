@@ -12,7 +12,7 @@
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
     <AssemblyName>WebView2Guard</AssemblyName>
     <RootNamespace>WebView2Guard</RootNamespace>
-    <VersionPrefix>0.1.1</VersionPrefix>
+    <VersionPrefix>0.2.0</VersionPrefix>
     <!-- "fd" = framework-dependent, "selfcontained"; set by CI, used to pick the update asset. -->
     <GuardFlavor Condition="'$(GuardFlavor)' == ''">fd</GuardFlavor>
     <Product>WebView2 Guard</Product>
