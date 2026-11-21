@@ -8,6 +8,7 @@ a new major version may need changes on your side, minor versions add features, 
 ## [0.2.0] - 2026-11-21
 
 ### Added
+- **Strict mode** (Runtime tab, `--strict on|off`): every app that is not allowed runs on a blocked copy of the allowed runtime instead of Evergreen, through the policy for all apps (`*`). The copy's path does not change with Windows updates, so there is no unblocked window, with plain Windows Firewall and no background process. The copy is made of hard links (no extra disk space); 32-bit apps run on it too; allowed apps keep the allowed runtime.
 - While WebView2 Guard runs (window or notification area), the Evergreen folders are watched: a version installed by Windows gets its block rule within about ten seconds instead of at the next hourly sync, with a notification.
 - In the notification area, a daily check for new versions of WebView2 Guard with a notification that starts the update (App menu: *Notify about new versions of WebView2 Guard*).
 

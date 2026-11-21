@@ -5,6 +5,7 @@
 - [Applications](#applications)
 - [Allowed domains](#allowed-domains)
 - [Runtime](#runtime)
+- [Strict mode](#strict-mode)
 - [Firewall](#firewall)
 - [Log](#log)
 - [Notification area](#notification-area)
@@ -94,6 +95,22 @@ A Fixed runtime never updates itself. The app warns you when the allowed runtime
 
 The **Evergreen runtime (Windows)** card lists every Evergreen version found, machine-wide and per user, with its block rule. Versions left over after an update are marked as such.
 
+## Strict mode
+
+Without strict mode, apps that are not allowed stay on Evergreen, and Evergreen is blocked one version folder at a time. Windows Firewall rules name one exact file (folders and wildcards are not accepted), so a version that Windows installs is unblocked until WebView2 Guard sees it: within seconds while the app runs, at the next hourly sync otherwise. A firewall that blocks unknown programs by default (Windows Firewall Control in *Medium Filtering*, for example) covers that gap; plain Windows Firewall does not.
+
+**Runtime → Turn on strict mode** removes the gap without another firewall or a background process:
+
+1. A blocked copy of the allowed x64 runtime is made in `Program Files\WebView2Guard\Runtime\Blocked\<version>`. It is made of hard links to the allowed runtime's files, so it takes no extra disk space (a full copy only if hard links are not possible).
+2. The copy gets its block rule (`WV2G-BlockCopy-<version>`).
+3. Only then, the `BrowserExecutableFolder` policy for all apps (`*`) points to the copy.
+
+Every app without its own policy, including apps you have never seen and 32-bit apps, then runs on the blocked copy instead of Evergreen. Its path changes only when you update the allowed runtime, and the new copy and its rule are made before `*` moves to it, so there is no moment without a rule. Allowed apps keep their own policy, which takes precedence over `*`. Apps started before strict mode stay on Evergreen (still blocked by its rules) until they are restarted.
+
+When the allowed runtime is updated or rolled back, the next sync makes a copy of the new version and moves `*` to it; the old copy is deleted as soon as no app uses it (it keeps its rule until then). **Turn off strict mode** removes `*`; the copies go once nothing uses them. Strict mode needs the allowed x64 runtime, and does nothing if another program already set a `*` policy.
+
+The Evergreen block rules stay in place in strict mode too, for apps that might bypass the policy.
+
 ## Firewall
 
 All the rules in the `WebView2 Guard` group, with their action, program and state. **Sync now** does what the scheduled task does: adds missing rules, removes rules for folders that no longer exist. **Remove all rules** deletes the group; Evergreen is no longer blocked by WebView2 Guard until the next sync.
@@ -139,6 +156,7 @@ All apps then use the Evergreen runtime again, unblocked. Afterwards you can del
 |---|---|
 | `C:\Program Files\WebView2Guard\WebView2Guard.exe` | the installed app (run by the scheduled tasks) |
 | `C:\Program Files\WebView2Guard\Runtime\x64`, `x86` | the allowed Fixed runtimes; `*.prev` the kept previous versions |
+| `C:\Program Files\WebView2Guard\Runtime\Blocked\<version>` | strict mode: the blocked copy (hard links to the allowed runtime) |
 | `C:\ProgramData\WebView2Guard\hosts.json` | the apps seen and when |
 | `C:\ProgramData\WebView2Guard\settings.json` | language, notification-area mode, notifications, automatic runtime update, update notices |
 | `C:\ProgramData\WebView2Guard\cache.json` | the last state shown, so the window opens at once |
@@ -165,6 +183,7 @@ Every command runs without a window and needs administrator rights. The app is a
 | `--tray` | starts in the notification area (used by the `\WebView2Guard\Tray` task) |
 | `--install` | installs to Program Files, creates the sync task and syncs the firewall |
 | `--sync` | updates the allowed runtime if automatic updates are on and due, then syncs the firewall rules (used by the `\WebView2Guard\Sync` task) |
+| `--strict on\|off` | turns [strict mode](#strict-mode) on or off |
 | `--runtime download [x64\|x86]` | downloads the newest Fixed runtime from Microsoft and installs it, unless it is already up to date |
 | `--runtime <file.cab>` | installs a Fixed runtime package |
 | `--allow <exe> [x64\|x86]` | lets an app use the allowed runtime (x64 unless said otherwise) |
@@ -182,7 +201,7 @@ Exit codes: 0 done, 1 failed (the reason is printed and written to the log), 2 w
 - The policy works by exe name: two different programs with the same exe name share the decision.
 - An app that runs before you allow it keeps the Evergreen runtime until it is restarted.
 - Sign-in through the Windows account manager (WAM) does not use WebView2, so it is not affected either way.
-- When WebView2 Guard is not running, a brand-new Evergreen version is not blocked until the next sync (at most an hour, or at the next startup), unless your firewall blocks unknown programs anyway. The notification-area mode closes that gap: the folders are watched and the rule is added within seconds.
+- Without [strict mode](#strict-mode), and when WebView2 Guard is not running, a brand-new Evergreen version is not blocked until the next sync (at most an hour, or at the next startup), unless your firewall blocks unknown programs anyway. While the app runs, the folders are watched and the rule is added within seconds; strict mode removes the gap entirely.
 - Allowed domains need the app to resolve names itself; they do not apply through a proxy.
 - WebView2 Guard controls WebView2 only. The apps' own exes, their updaters and other helper processes are a matter for your firewall.
 
@@ -203,6 +222,7 @@ One C# project (`src/WebView2Guard`, .NET 10, Windows Forms), a unit test projec
 | `Core/DomainRules.cs` | the `--host-resolver-rules` argument for allowed domains |
 | `Core/ConfigTransfer.cs` | export and import of the configuration |
 | `Core/EvergreenWatcher.cs` | watches the Evergreen folders while the app runs |
+| `Core/StrictMode.cs` | the blocked copy and the `*` policy |
 | `Cli.cs` | the command line |
 | `UI/` | the window, tabs, dialogs and theme |
 | `Localization/Strings.cs` | every text, Romanian and English |
@@ -217,7 +237,7 @@ The in-app updater picks the asset by the `GuardFlavor` property (`fd` or `selfc
 
 ## Releasing
 
-`.github/workflows/windows.yml` runs on every push and pull request: unit tests, both builds, then an end-to-end test of the self-contained build on the Windows runner through the command line (install, block rules, the Fixed runtime downloaded from Microsoft, policies, domains, export and import, the window, uninstall). With the firewall on, a small WebView2 app (`tests/WebView2Probe`) must fail to load a page while it runs on the blocked Evergreen runtime, load it once allowed (on the Fixed runtime), resolve only its allowed domains, and go offline again after Block.
+`.github/workflows/windows.yml` runs on every push and pull request: unit tests, both builds, then an end-to-end test of the self-contained build on the Windows runner through the command line (install, block rules, the Fixed runtime downloaded from Microsoft, policies, domains, export and import, the window, uninstall). With the firewall on, a small WebView2 app (`tests/WebView2Probe`) must fail to load a page while it runs on the blocked Evergreen runtime, load it once allowed (on the Fixed runtime), resolve only its allowed domains, and go offline again after Block. In strict mode the 64-bit and the 32-bit build of that app must run on the blocked copy and stay offline, while the allowed app stays online.
 
 - On a branch other than `main`, the builds are published as a draft release named **Test build**, replaced by the next one. Drafts are visible only to the repository owner and the in-app updater ignores them.
 - On `main`, when the version in `WebView2Guard.csproj` (`VersionPrefix`, plus `VersionSuffix` for a pre-release such as `beta.1`) has no release yet, CI creates the `v<version>` tag and publishes the release with that version's `CHANGELOG.md` section as notes. A version with a suffix is published as a pre-release.
