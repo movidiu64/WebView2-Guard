@@ -14,8 +14,6 @@ Everything else that opens web content through Microsoft Edge WebView2 stays off
 ![UI: English | Română](https://img.shields.io/badge/UI-English%20%7C%20Rom%C3%A2n%C4%83-lightgrey)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ovidiu64-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/ovidiu64)
 
-<img src="docs/screenshot.png" alt="WebView2 Guard: the Applications tab with allowed and blocked apps and the protection status" width="100%">
-
 </div>
 
 Many desktop programs (Autodesk products, Office, Teams, Widgets…) show web pages and send data through the shared WebView2 runtime. A firewall rule on the program's own exe does not stop that traffic: it leaves through `msedgewebview2.exe`, from a folder whose name changes with every update. WebView2 Guard blocks the shared runtime in Windows Firewall and lets only the apps you approve go online, through a separate runtime of their own. It is for anyone who wants control over what their software sends, without blocking the programs themselves.

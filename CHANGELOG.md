@@ -5,7 +5,7 @@ a new major version may need changes on your side, minor versions add features, 
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-21
+## [0.1.1] - 2026-11-21
 
 First public release, after the 0.1.0-beta.1 to beta.6 test builds. Licensed under the GNU GPL v3.
 
