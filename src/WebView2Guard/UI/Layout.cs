@@ -14,7 +14,6 @@ internal sealed class WrapLabel : Label
         ForeColor = color ?? Theme.Text;
         AutoSize = true;
         UseMnemonic = false;
-        BackColor = Color.Transparent;
         Margin = P(0, 0, 0, 8);
     }
 }

@@ -89,10 +89,11 @@ internal sealed class MainForm : Form, IShell
         foreach (var p in _pages)
         {
             p.Dock = DockStyle.Fill;
-            p.Visible = false;
+            p.Enabled = false;
             _content.Controls.Add(p);
         }
-        _apps.Visible = true;
+        _apps.Enabled = true;
+        _apps.BringToFront();
 
         _tabs.Dock = DockStyle.Top;
         _tabs.BackColor = Bg;
@@ -464,11 +465,17 @@ internal sealed class MainForm : Form, IShell
 
     public void ShowTab(int index) => _tabs.Selected = index;
 
+    /// <summary>
+    /// All pages stay visible and laid out, stacked on top of each other; switching only brings one to the front.
+    /// Hiding/showing them made Windows create and lay out every control again on first view (visible lag).
+    /// </summary>
     private void SwitchPage(int index)
     {
-        _content.SuspendLayout();
-        for (var i = 0; i < _pages.Length; i++) _pages[i].Visible = i == index;
-        _content.ResumeLayout(true);
+        var page = _pages[index];
+        page.Enabled = true;
+        page.BringToFront();
+        for (var i = 0; i < _pages.Length; i++)
+            if (i != index) _pages[i].Enabled = false; // keeps Tab focus out of the pages behind
         if (index == 3 && !_log.Loaded) _log.Reload();
     }
 
@@ -503,7 +510,7 @@ internal sealed class MainForm : Form, IShell
     {
         // In the tray the scan keeps running (hidden) so new apps can be announced.
         var hidden = !Visible || WindowState == FormWindowState.Minimized;
-        if (_busy || _refreshing || Current == null || (hidden && _tray == null) || (!hidden && !_apps.Visible)) return;
+        if (_busy || _refreshing || Current == null || (hidden && _tray == null) || (!hidden && _tabs.Selected != 0)) return;
         try
         {
             var hosts = await Task.Run(Guard.CollectHosts);
@@ -720,7 +727,6 @@ internal sealed class Banner : Card
             Dock = DockStyle.Fill,
             ColumnCount = 4,
             RowCount = 1,
-            BackColor = Color.Transparent
         };
         t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));

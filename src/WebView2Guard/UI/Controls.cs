@@ -373,7 +373,6 @@ internal static class Ui
             AutoSize = true,
             Margin = P(0, 0, 0, 6),
             UseMnemonic = false,
-            BackColor = Color.Transparent
         };
         if (maxWidth > 0) l.MaximumSize = new Size(S(maxWidth), 0);
         return l;
@@ -388,7 +387,6 @@ internal static class Ui
         Margin = P(0, 2, 6, 0),
         AccessibleRole = AccessibleRole.Graphic,
         UseMnemonic = false,
-        BackColor = Color.Transparent
     };
 
     public static FlowLayoutPanel Row(params Control[] controls)
@@ -401,7 +399,6 @@ internal static class Ui
             FlowDirection = FlowDirection.LeftToRight,
             Margin = new Padding(0),
             Padding = new Padding(0),
-            BackColor = Color.Transparent
         };
         f.Controls.AddRange(controls);
         return f;
@@ -425,7 +422,6 @@ internal static class Ui
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Dock = DockStyle.Top,
             Margin = P(0, 4, 0, 8),
-            BackColor = Color.Transparent
         };
         for (var i = 0; i < columns; i++) t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
         return t;

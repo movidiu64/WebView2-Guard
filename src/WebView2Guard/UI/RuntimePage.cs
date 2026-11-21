@@ -81,7 +81,6 @@ internal sealed class RuntimePage : UserControl
             ActiveLinkColor = WarnText,
             Font = Strong,
             Margin = P(0, 1, 0, 0),
-            BackColor = Color.Transparent
         };
         link.LinkClicked += (_, _) => MainForm.OpenUrl(DownloadUrl);
         var row = Ui.Row(icon, text, link);
@@ -207,7 +206,6 @@ internal sealed class RuntimePage : UserControl
             Checked = settings.AutoUpdateRuntime,
             AutoSize = true,
             Margin = P(0, 2, 0, 4),
-            BackColor = Color.Transparent
         };
         auto.CheckedChanged += (_, _) =>
         {
@@ -240,7 +238,6 @@ internal sealed class RuntimePage : UserControl
             LinkColor = Accent,
             Font = Strong,
             Margin = P(8, 9, 0, 0),
-            BackColor = Color.Transparent
         };
         link.LinkClicked += (_, _) => MainForm.OpenUrl(DownloadUrl);
         var manual = new WrapLabel(L.T("rt.updates.manual"), Small, TextMuted) { Margin = P(0, 6, 0, 0) };
