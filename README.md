@@ -29,6 +29,7 @@ Many desktop programs (Autodesk products, Office, Teams, Widgets…) show web pa
 - ⬇️ **Runtime from Microsoft**: install the Fixed runtime from a `.cab` you downloaded, or let the app download the newest one from Microsoft's page and keep it up to date. The Microsoft signature is checked before anything is replaced, and the previous version is kept for rollback.
 - 🔥 **Its own firewall rules only**: everything lives in the `WebView2 Guard` group; works next to Malwarebytes Windows Firewall Control and other firewall tools.
 - ↩️ **Reversible**: a `.reg` backup before every policy change, and *Uninstall everything* puts the system back as it was.
+- 📦 **Export / import and command line**: move your decisions to another PC, or script installs with `--install`, `--allow`, `--import` and the other commands.
 - 🌐 English and Romanian interface; updates itself from GitHub Releases, with SHA-256 checks.
 
 ## Quick start
@@ -54,7 +55,7 @@ dotnet test tests/WebView2Guard.Tests        # unit tests
 dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-Every push runs the tests and builds both variants on Windows. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
+Every push runs the unit tests, builds both variants and tests the app end to end on a Windows runner (install, firewall rules, runtime download, policies, uninstall). A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
 
 ## Support
 

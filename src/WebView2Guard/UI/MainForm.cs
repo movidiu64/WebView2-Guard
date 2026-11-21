@@ -416,6 +416,8 @@ internal sealed class MainForm : Form, IShell
         }
         _menu.Items.Add(lang);
         _menu.Items.Add(L.T("menu.dataFolder"), null, (_, _) => OpenFolder(AppPaths.DataDir));
+        _menu.Items.Add(L.T("menu.export"), null, (_, _) => _ = ExportConfigAsync());
+        _menu.Items.Add(L.T("menu.import"), null, (_, _) => _ = ImportConfigAsync());
         _menu.Items.Add(L.T("menu.checkUpdates"), null, (_, _) => _ = CheckAppUpdateAsync());
         _menu.Items.Add(new ToolStripSeparator());
         var settings = Settings.Load();
@@ -651,6 +653,52 @@ internal sealed class MainForm : Form, IShell
                 Ui.Error(this, ex.Message);
             }
         }
+    }
+
+    /// <summary>Saves the allowed apps, their domains and the settings to a file, for another PC or a reinstall.</summary>
+    private async Task ExportConfigAsync()
+    {
+        if (_busy) return;
+        using var dlg = new SaveFileDialog
+        {
+            Title = L.T("menu.export"),
+            Filter = L.T("filter.config"),
+            FileName = "WebView2Guard-" + Environment.MachineName + ".json",
+            OverwritePrompt = true
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        var ok = false;
+        await RunAsync(() => { ConfigTransfer.Export(dlg.FileName); ok = true; }, refresh: false, status: L.T("status.export"));
+        if (ok) ShowIdle(L.F("msg.exported", dlg.FileName));
+    }
+
+    /// <summary>Applies a saved configuration: adds its apps and allows the ones allowed there.</summary>
+    private async Task ImportConfigAsync()
+    {
+        if (_busy) return;
+        using var dlg = new OpenFileDialog { Title = L.T("menu.import"), Filter = L.T("filter.config"), CheckFileExists = true };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        GuardConfig config;
+        try
+        {
+            config = ConfigTransfer.Parse(File.ReadAllText(dlg.FileName));
+        }
+        catch (Exception ex)
+        {
+            Ui.Error(this, ex.Message);
+            return;
+        }
+        var allowed = config.Apps.Count(a => a.Allowed);
+        if (!Ui.Confirm(this, L.F("confirm.import", Path.GetFileName(dlg.FileName), allowed, config.Apps.Count))) return;
+
+        ImportResult? result = null;
+        await RunAsync(() => result = ConfigTransfer.Apply(config), status: L.T("status.import"));
+        if (result == null) return;
+        if (_notifyItem != null) _notifyItem.Checked = Settings.Load().NotifyNewApps;
+        var text = L.F("msg.imported", result.Allowed, result.Added);
+        if (result.Skipped.Count > 0) text += "\n\n" + L.T("msg.importSkipped") + "\n" + string.Join("\n", result.Skipped);
+        MessageBox.Show(this, text, "WebView2 Guard", MessageBoxButtons.OK,
+            result.Skipped.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
     }
 
     /// <summary>Checks GitHub for a newer release of this app, downloads it (SHA-256 checked) and restarts.</summary>

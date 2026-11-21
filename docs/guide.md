@@ -11,6 +11,7 @@
 - [Updating WebView2 Guard](#updating-webview2-guard)
 - [Using it with Windows Firewall Control](#using-it-with-windows-firewall-control)
 - [Uninstalling](#uninstalling)
+- [Export and import](#export-and-import)
 - [Files and settings](#files-and-settings)
 - [Command line](#command-line)
 - [Limits](#limits)
@@ -144,13 +145,35 @@ All apps then use the Evergreen runtime again, unblocked. Afterwards you can del
 
 The data folder is writable only by administrators and SYSTEM.
 
+## Export and import
+
+**App → Export configuration…** saves a JSON file with the apps in the list, which of them are allowed (and for which runtime), their allowed domains and the settings (language, notifications, automatic runtime update). **App → Import configuration…** applies such a file on another PC or after a reinstall: it adds the apps to the list and allows the ones allowed in the file. It adds to what is there: apps already allowed stay allowed. An app is skipped, and named in the result, when its runtime is not installed yet or another program already set a policy for it.
+
 ## Command line
 
-| Argument | Effect |
+Every command runs without a window and needs administrator rights. The app is a Windows (GUI) program, so in PowerShell pipe the output to make the shell wait for it and show it, from an elevated window:
+
+```powershell
+& "C:\Program Files\WebView2Guard\WebView2Guard.exe" --status | Out-Host
+```
+
+| Command | Effect |
 |---|---|
 | *(none)* | opens the window; if WebView2 Guard already runs, shows it |
 | `--tray` | starts in the notification area (used by the `\WebView2Guard\Tray` task) |
-| `--sync` | no window: updates the allowed runtime if automatic updates are on and due, then syncs the firewall rules and exits (used by the `\WebView2Guard\Sync` task) |
+| `--install` | installs to Program Files, creates the sync task and syncs the firewall |
+| `--sync` | updates the allowed runtime if automatic updates are on and due, then syncs the firewall rules (used by the `\WebView2Guard\Sync` task) |
+| `--runtime download [x64\|x86]` | downloads the newest Fixed runtime from Microsoft and installs it, unless it is already up to date |
+| `--runtime <file.cab>` | installs a Fixed runtime package |
+| `--allow <exe> [x64\|x86]` | lets an app use the allowed runtime (x64 unless said otherwise) |
+| `--block <exe>` | sends an app back to Evergreen and removes its domain list |
+| `--domains <exe> <a.com,*.b.com>` | allowed domains for an allowed app; `none` removes the limit |
+| `--export <file.json>`, `--import <file.json>` | see [Export and import](#export-and-import) |
+| `--status` | prints the protection state, the runtimes, the problems found and the apps |
+| `--uninstall [--keep-runtimes]` | removes policies, rules, tasks, the shortcut and (unless kept) the runtimes |
+| `--help` | lists the commands |
+
+Exit codes: 0 done, 1 failed (the reason is printed and written to the log), 2 wrong arguments. `--import` returns 1 when an app was skipped.
 
 ## Limits
 
@@ -176,6 +199,8 @@ One C# project (`src/WebView2Guard`, .NET 10, Windows Forms) and a unit test pro
 | `Core/Guard.cs` | collects the state, evaluates problems, applies decisions |
 | `Core/Updaters.cs` | runtime downloads from Microsoft, app updates from GitHub Releases |
 | `Core/DomainRules.cs` | the `--host-resolver-rules` argument for allowed domains |
+| `Core/ConfigTransfer.cs` | export and import of the configuration |
+| `Cli.cs` | the command line |
 | `UI/` | the window, tabs, dialogs and theme |
 | `Localization/Strings.cs` | every text, Romanian and English |
 
@@ -189,7 +214,7 @@ The in-app updater picks the asset by the `GuardFlavor` property (`fd` or `selfc
 
 ## Releasing
 
-`.github/workflows/windows.yml` runs on every push and pull request: tests, then both builds.
+`.github/workflows/windows.yml` runs on every push and pull request: unit tests, both builds, then an end-to-end test of the self-contained build on the Windows runner through the command line (install, block rules, the Fixed runtime downloaded from Microsoft, policies, domains, export and import, the window, uninstall).
 
 - On a branch other than `main`, the builds are published as a draft release named **Test build**, replaced by the next one. Drafts are visible only to the repository owner and the in-app updater ignores them.
 - On `main`, when the version in `WebView2Guard.csproj` (`VersionPrefix`, plus `VersionSuffix` for a pre-release such as `beta.1`) has no release yet, CI creates the `v<version>` tag and publishes the release with that version's `CHANGELOG.md` section as notes. A version with a suffix is published as a pre-release.

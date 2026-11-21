@@ -152,3 +152,40 @@ public class FirewallParseTests
         Assert.Single(FirewallManager.Parse("{\"Name\":\"x\",\"Action\":\"Block\",\"Program\":\"p\",\"Enabled\":\"True\"}"));
     }
 }
+
+public class ConfigTransferTests
+{
+    [Fact]
+    public void Serialize_and_parse_round_trip()
+    {
+        var c = new GuardConfig
+        {
+            AppVersion = "0.1.0",
+            Apps =
+            {
+                new AppConfig { ExeName = "AdskIdentityManager.exe", Allowed = true, Arch = Arch.X64, Domains = new() { "*.autodesk.com" } },
+                new AppConfig { ExeName = "acad.exe", Arch = Arch.X64, Path = @"C:\Program Files\Autodesk\acad.exe" }
+            },
+            Settings = new SettingsConfig { Language = "ro", AutoUpdateRuntime = true }
+        };
+        var json = ConfigTransfer.Serialize(c);
+        Assert.Contains("\"X64\"", json);
+        var back = ConfigTransfer.Parse(json);
+        Assert.Equal(2, back.Apps.Count);
+        Assert.True(back.Apps[0].Allowed);
+        Assert.Equal(new[] { "*.autodesk.com" }, back.Apps[0].Domains);
+        Assert.Null(back.Apps[1].Domains);
+        Assert.Equal("ro", back.Settings!.Language);
+        Assert.True(back.Settings.AutoUpdateRuntime);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("{\"Format\":\"something else\",\"Apps\":[]}")]
+    [InlineData("{\"Format\":\"WebView2Guard.Config\",\"FormatVersion\":2,\"Apps\":[]}")]
+    [InlineData("{\"Format\":\"WebView2Guard.Config\",\"Apps\":[{\"ExeName\":\"..\\\\evil.exe\"}]}")]
+    [InlineData("{\"Format\":\"WebView2Guard.Config\",\"Apps\":[{\"ExeName\":\"*\",\"Allowed\":true}]}")]
+    public void Parse_rejects_invalid_files(string json) =>
+        Assert.Throws<InvalidOperationException>(() => ConfigTransfer.Parse(json));
+}
+

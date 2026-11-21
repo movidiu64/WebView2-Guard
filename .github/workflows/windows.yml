@@ -25,7 +25,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The version comes from the project file. Release builds (main and tags) carry it as is;
       # other builds get a "dev.<run>" pre-release suffix, so a later release always counts as newer.
@@ -46,7 +46,7 @@ jobs:
           "suffix=$build" >> $env:GITHUB_OUTPUT
           Write-Host "WebView2 Guard $version (build: $prefix$(if ($build) { "-$build" }))"
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
@@ -78,8 +78,103 @@ jobs:
           Get-Content out/SHA256SUMS.txt
           Get-ChildItem out | Format-Table Name, Length
 
+      # The real thing on the runner, through the command line: install, firewall rules, the Fixed
+      # runtime from Microsoft (signature, permissions), policies, domains, export/import, the window,
+      # uninstall. The runner is a throwaway VM with administrator rights.
+      - name: End-to-end test
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path out/WebView2Guard-win-x64-selfcontained.exe).Path
+          $dir = Join-Path $env:ProgramFiles 'WebView2Guard'
+          $pol = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2'
+          function Guard([string]$arguments, [int]$expect = 0) {
+            Write-Host "> WebView2Guard $arguments"
+            $o = Join-Path $env:RUNNER_TEMP 'o.txt'; $e = Join-Path $env:RUNNER_TEMP 'e.txt'
+            $p = Start-Process $exe -ArgumentList $arguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $o -RedirectStandardError $e
+            $text = (Get-Content $o, $e -Raw -ErrorAction SilentlyContinue) -join ''
+            Write-Host $text
+            if ($p.ExitCode -ne $expect) { throw "exit code $($p.ExitCode), expected $expect" }
+            return $text
+          }
+          function Value($key, $name) { (Get-ItemProperty "$pol\$key" -ErrorAction SilentlyContinue).$name }
+          function Rules { @(Get-NetFirewallRule -Group 'WebView2 Guard' -ErrorAction SilentlyContinue) }
+
+          Guard '--help' | Out-Null
+          Guard '--allow' 2 | Out-Null
+
+          # 1. Install: exe in Program Files, sync task, a block rule for every Evergreen version.
+          Guard '--install' | Out-Null
+          if (-not (Test-Path "$dir\WebView2Guard.exe")) { throw 'install: exe missing' }
+          if (-not (Get-ScheduledTask -TaskPath '\WebView2Guard\' -TaskName Sync -ErrorAction SilentlyContinue)) { throw 'install: sync task missing' }
+          $evergreen = @(Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe" -ErrorAction SilentlyContinue)
+          Write-Host "Evergreen versions on the runner: $($evergreen.Count)"
+          foreach ($f in $evergreen) {
+            $v = Split-Path (Split-Path $f.FullName) -Leaf
+            if (-not (Rules | Where-Object { $_.Action -eq 'Block' -and ($_.Name -like "*$v*" -or $_.DisplayName -like "*$v*") })) { throw "no block rule for Evergreen $v" }
+          }
+
+          # 2. Allowing needs the runtime first.
+          Guard '--allow testhost.exe' 1 | Out-Null
+
+          # 3. The Fixed runtime from Microsoft: signature checked, App Container permissions, allow rule.
+          Guard '--runtime download x64' | Out-Null
+          if (-not (Test-Path "$dir\Runtime\x64\msedgewebview2.exe")) { throw 'runtime: msedgewebview2.exe missing' }
+          if ((Get-AuthenticodeSignature "$dir\Runtime\x64\msedgewebview2.exe").Status -ne 'Valid') { throw 'runtime: signature' }
+          if (-not ((icacls "$dir\Runtime\x64") -match 'APPLICATION PACKAGES')) { throw 'runtime: App Container permissions missing' }
+          if (-not (Rules | Where-Object { $_.Action -eq 'Allow' -and $_.Enabled -eq 'True' })) { throw 'runtime: allow rule missing' }
+          if ((Guard '--runtime download x64') -notmatch 'up to date') { throw 'runtime: second download not skipped' }
+
+          # 4. Policies and domains.
+          Guard '--allow testhost.exe' | Out-Null
+          if ((Value BrowserExecutableFolder testhost.exe) -ne "$dir\Runtime\x64") { throw 'allow: policy value' }
+          Guard '--domains testhost.exe example.com,*.example.org' | Out-Null
+          $extra = Value AdditionalBrowserArguments testhost.exe
+          if ($extra -notmatch 'MAP \* ~NOTFOUND' -or $extra -notmatch 'EXCLUDE example\.com' -or $extra -notmatch 'EXCLUDE \*\.example\.org') { throw "domains: $extra" }
+          Guard '--domains other.exe example.com' 1 | Out-Null
+          if ((Guard '--status') -notmatch 'testhost\.exe\s+Allowed') { throw 'status: testhost.exe not shown as allowed' }
+
+          # 5. Export, block, import: the decision and the domains come back.
+          $cfg = Join-Path $env:RUNNER_TEMP 'config.json'
+          Guard "--export `"$cfg`"" | Out-Null
+          $json = Get-Content $cfg -Raw | ConvertFrom-Json
+          $app = $json.Apps | Where-Object ExeName -eq 'testhost.exe'
+          if (-not $app.Allowed -or $app.Domains.Count -ne 2) { throw 'export: testhost.exe' }
+          Guard '--block testhost.exe' | Out-Null
+          if (Value BrowserExecutableFolder testhost.exe) { throw 'block: policy still there' }
+          if (Value AdditionalBrowserArguments testhost.exe) { throw 'block: domains still there' }
+          Guard "--import `"$cfg`"" | Out-Null
+          if ((Value BrowserExecutableFolder testhost.exe) -ne "$dir\Runtime\x64") { throw 'import: policy' }
+          if ((Value AdditionalBrowserArguments testhost.exe) -notmatch 'EXCLUDE example\.com') { throw 'import: domains' }
+          if (-not (Get-ChildItem "$env:ProgramData\WebView2Guard\backups\*.reg")) { throw 'no .reg backups' }
+
+          # 6. The window opens and keeps running.
+          $ui = Start-Process "$dir\WebView2Guard.exe" -PassThru
+          $t = 0
+          while ($t -lt 30 -and -not $ui.HasExited -and $ui.MainWindowHandle -eq 0) { Start-Sleep 1; $ui.Refresh(); $t++ }
+          if ($ui.HasExited) { throw "window: the app exited with $($ui.ExitCode)" }
+          if ($ui.MainWindowHandle -eq 0) { throw 'window: no main window after 30 s' }
+          Start-Sleep 5
+          if ($ui.HasExited) { throw "window: the app exited with $($ui.ExitCode)" }
+          Write-Host "window: '$($ui.MainWindowTitle)' open"
+          Stop-Process -Id $ui.Id -Force
+
+          # 7. Sync, then uninstall: nothing of ours is left.
+          Guard '--sync' | Out-Null
+          Guard '--uninstall' | Out-Null
+          if (Value BrowserExecutableFolder testhost.exe) { throw 'uninstall: policy left' }
+          if (Value AdditionalBrowserArguments testhost.exe) { throw 'uninstall: domains left' }
+          if ((Rules).Count -ne 0) { throw "uninstall: $((Rules).Count) rules left" }
+          if (Get-ScheduledTask -TaskPath '\WebView2Guard\' -ErrorAction SilentlyContinue) { throw 'uninstall: tasks left' }
+          if (Test-Path "$dir\Runtime\x64") { throw 'uninstall: runtime left' }
+          if (Select-String -Path "$env:ProgramData\WebView2Guard\guard.log" -Pattern 'ERROR' -SimpleMatch -Quiet) {
+            Get-Content "$env:ProgramData\WebView2Guard\guard.log" | Write-Host
+            Write-Warning 'guard.log has errors (expected ones come from the negative tests)'
+          }
+          Write-Host 'install, runtime, allow, domains, export/import, window, uninstall: ok'
+
       # Artifacts count against the account's shared storage: keep them briefly. Releases stay.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         continue-on-error: true
         with:
           name: WebView2Guard-win-x64

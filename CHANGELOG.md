@@ -28,3 +28,7 @@ First public release, after the 0.1.0-beta.1 to beta.6 test builds. Licensed und
 - Checks GitHub Releases for new versions and updates itself after a SHA-256 check.
 - Starting a newer exe while an older version runs closes the older one and offers to update the Program Files copy.
 - Two builds: framework-dependent (needs the .NET 10 Desktop Runtime) and self-contained.
+
+### Configuration and scripting
+- **Export / import** of the configuration (allowed apps, their domains, settings) to move it to another PC or keep it across reinstalls.
+- Command line for scripts: `--install`, `--runtime`, `--allow`, `--block`, `--domains`, `--export`, `--import`, `--status`, `--uninstall`.
