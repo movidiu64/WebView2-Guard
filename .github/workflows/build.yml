@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -45,11 +47,18 @@ jobs:
           name: WebView2Guard-win-x64
           path: dist/
 
-      - name: GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: GitHub release (tag push)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $pre = if ($env:GITHUB_REF_NAME -like '*-*') { '--prerelease' } else { $null }
           gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist/*.exe).FullName dist/SHA256SUMS.txt --generate-notes --title "WebView2 Guard $env:GITHUB_REF_NAME" $pre
+
+      - name: Attach files to a release created on GitHub
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" (Get-ChildItem dist/*.exe).FullName dist/SHA256SUMS.txt --clobber
