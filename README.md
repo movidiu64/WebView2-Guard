@@ -1,103 +1,71 @@
+<div align="center">
+
+<img src="docs/logo.svg" width="88" alt="WebView2 Guard logo">
+
 # WebView2 Guard
 
-Per-application internet whitelist for **Microsoft Edge WebView2** on Windows 10/11.
+**Decide which Windows apps may use WebView2 to reach the internet.**
+Everything else that opens web content through Microsoft Edge WebView2 stays offline, including apps you have never seen.
 
-[Română mai jos ↓](#română)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![CI](https://github.com/movidiu64/WebView2-Guard/actions/workflows/windows.yml/badge.svg)](https://github.com/movidiu64/WebView2-Guard/actions/workflows/windows.yml)
+[![Release](https://img.shields.io/github/v/release/movidiu64/WebView2-Guard?include_prereleases)](https://github.com/movidiu64/WebView2-Guard/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](https://github.com/movidiu64/WebView2-Guard/releases/latest)
+![UI: English | Română](https://img.shields.io/badge/UI-English%20%7C%20Rom%C3%A2n%C4%83-lightgrey)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ovidiu64-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/ovidiu64)
 
-Many desktop apps (Autodesk, Office, Teams, Widgets…) open web content and send data through the shared WebView2 runtime. A firewall rule on the app's own exe does not catch that traffic, because it leaves through `msedgewebview2.exe`, from a folder whose name changes with every update.
+<img src="docs/screenshot.png" alt="WebView2 Guard: the Applications tab with allowed and blocked apps and the protection status" width="100%">
 
-WebView2 Guard turns this around:
+</div>
 
-- the **Evergreen** runtime (the one Windows updates) gets an outbound **block** rule for every version folder, kept current by a scheduled task;
-- a separate **Fixed Version** runtime ("Allowed", x64/x86) gets an **allow** rule;
-- only the apps you approve are routed to the Allowed runtime, through the official per-exe policy
-  `HKLM\SOFTWARE\Policies\Microsoft\Edge\WebView2\BrowserExecutableFolder`;
-- everything else, including apps you have never seen, stays on Evergreen and has no internet.
+Many desktop programs (Autodesk products, Office, Teams, Widgets…) show web pages and send data through the shared WebView2 runtime. A firewall rule on the program's own exe does not stop that traffic: it leaves through `msedgewebview2.exe`, from a folder whose name changes with every update. WebView2 Guard blocks the shared runtime in Windows Firewall and lets only the apps you approve go online, through a separate runtime of their own. It is for anyone who wants control over what their software sends, without blocking the programs themselves.
 
-You can split one product: for example allow `AdskIdentityManager.exe` (license sign-in) and keep `acad.exe` (Home / Start page) blocked.
+## Features
 
-## Requirements
+- 🛡️ **Blocked by default**: every version of the Evergreen runtime (the one Windows updates) gets an outbound block rule, kept current by a scheduled task that runs at startup and every hour, even when the window is closed.
+- ✅ **Allow per app**: approved apps are routed to a Fixed Version runtime that has an allow rule, through Microsoft's official per-exe policy. You can split a product: allow the license sign-in, keep the start page offline.
+- 🌐 **Allowed domains**: optionally limit an allowed app to a list of host names (`*.example.com` works); every other name fails to resolve.
+- 🔎 **Sees who uses WebView2**: lists every app that starts the runtime, with its architecture, the runtime it is on and whether it must be restarted. New apps are flagged, and a notification-area icon can tell you about them as they appear.
+- ⬇️ **Runtime from Microsoft**: install the Fixed runtime from a `.cab` you downloaded, or let the app download the newest one from Microsoft's page and keep it up to date. The Microsoft signature is checked before anything is replaced, and the previous version is kept for rollback.
+- 🔥 **Its own firewall rules only**: everything lives in the `WebView2 Guard` group; works next to Malwarebytes Windows Firewall Control and other firewall tools.
+- ↩️ **Reversible**: a `.reg` backup before every policy change, and *Uninstall everything* puts the system back as it was.
+- 🌐 English and Romanian interface; updates itself from GitHub Releases, with SHA-256 checks.
 
-- Windows 10 1709+ or Windows 11, administrator rights
-- `WebView2Guard-win-x64.exe` needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0); the `-selfcontained` build needs nothing
-- a WebView2 **Fixed Version** `.cab` from Microsoft (x64; x86 only for 32-bit apps)
+## Quick start
 
-## Getting started
+1. Download from [Releases](https://github.com/movidiu64/WebView2-Guard/releases/latest): `WebView2Guard-win-x64-selfcontained.exe` runs anywhere; the smaller `WebView2Guard-win-x64.exe` needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). Run it; it asks for administrator rights. Windows SmartScreen may warn about an unsigned app: choose **More info → Run anyway**.
+2. **App → Install to Program Files**: copies the app, creates the sync task and adds the block rules.
+3. **Runtime → Download from Microsoft** (or **Install from .cab…**) for the allowed x64 runtime.
+4. **Applications**: start the programs you use; they show up in the list. Select one, click **Allow internet** and restart that program.
 
-1. Download the exe from [Releases](../../releases) (or the latest CI artifact) and run it.
-2. **App → Install to Program Files.** This copies the exe to `C:\Program Files\WebView2Guard`, creates the
-   `\WebView2Guard\Sync` task (runs as SYSTEM at startup and hourly) and syncs the firewall rules.
-3. **Runtime → Install from .cab…** with the Fixed Version package. The app extracts it, checks the Microsoft
-   Authenticode signature, sets the App Container permissions and adds the allow rule.
-4. **Applications:** start the programs you care about; they appear in the list. Select one → **Allow internet**,
-   then restart that program.
+> [!TIP]
+> Allow as little as possible, one exe at a time. For example, allow `AdskIdentityManager.exe` (Autodesk sign-in) and keep `acad.exe` (the AutoCAD start page) blocked, then check that the program still works for you.
 
-**Updates:** App → Check for app updates (GitHub Releases, SHA-256 checked). Runtime tab → Check for update downloads
-the newest Fixed runtime straight from Microsoft; *Update automatically* lets the sync task do it once a day.
+## Documentation
 
-**Allowed domains (per app):** select an allowed app → *Domains…* and list the host names it may reach
-(e.g. only the sign-in servers). Applied through the `AdditionalBrowserArguments` policy with
-`--host-resolver-rules`; every other name fails to resolve. Not effective when the app goes through a proxy.
+The [guide](docs/guide.md) explains how it works, every tab, allowed domains, runtime updates, using it with Windows Firewall Control, the files it keeps, the command line and its limits. The [changelog](CHANGELOG.md) lists what changed in each version.
 
-**Notification area:** App → *Run in the notification area and start with Windows* keeps the app in the tray
-(started elevated at logon by a scheduled task, no UAC prompt) and notifies you when an app uses WebView2 for the
-first time.
+## Development
 
-**Uninstall:** App → Uninstall everything… removes the policies, rules, task and (optionally) the runtimes.
-A `.reg` backup of the policy key is written to `C:\ProgramData\WebView2Guard\backups` before every change.
+C# on .NET 10 with Windows Forms, one single-file exe with no dependencies besides `System.Management`. Requires Windows and the .NET 10 SDK.
 
-## Using it with Malwarebytes Windows Firewall Control
-
-With *Secure Rules* on, WFC deletes rules created by other programs: add the group **`WebView2 Guard`** to WFC's
-authorized groups.
-
-## Notes and limits
-
-- Apps that call Microsoft's WAM/web account manager for sign-in do not use WebView2 for that step.
-- The Allowed runtime does not update itself: update it from the Runtime tab when the app warns you.
-- The sync task runs hourly: a brand-new Evergreen version is unblocked by these rules until the next run
-  (in WFC *Medium Filtering* it is blocked anyway, because nothing allows it).
-
-## Build
-
-```
+```powershell
+dotnet test tests/WebView2Guard.Tests        # unit tests
 dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-CI (`.github/workflows/build.yml`) builds both variants on every push and publishes a release for `v*` tags.
+Every push runs the tests and builds both variants on Windows. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
+
+## Support
+
+WebView2 Guard is free and has no ads or telemetry. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/ovidiu64) ☕. Bug reports and ideas in [Issues](https://github.com/movidiu64/WebView2-Guard/issues) help just as much.
+
+## Contributing
+
+Issues and pull requests are welcome; please read [CONTRIBUTING.md](CONTRIBUTING.md) first, including the license terms for contributions.
 
 ## License
 
-GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
+WebView2 Guard is free software under the [GNU General Public License v3.0](LICENSE). You can use, study, modify and share it freely. If you distribute it, modified or not, you must make the source code available under the same license.
 
----
-
-## Română
-
-Whitelist de acces la internet pentru **Microsoft Edge WebView2**, pe fiecare aplicație (Windows 10/11).
-
-Multe programe (Autodesk, Office, Teams, Widgets…) afișează conținut web și trimit date prin runtime-ul WebView2
-comun. O regulă de firewall pe exe-ul programului nu prinde traficul ăsta, pentru că iese prin `msedgewebview2.exe`,
-dintr-un folder al cărui nume se schimbă la fiecare update.
-
-Cum funcționează:
-
-- runtime-ul **Evergreen** (cel actualizat de Windows) primește regulă de **blocare** pentru fiecare versiune, ținută la zi de un task programat;
-- un runtime **Fixed Version** separat („Permis”, x64/x86) primește regulă de **permitere**;
-- doar aplicațiile aprobate de tine sunt trimise spre runtime-ul permis, prin politica oficială pe exe
-  `BrowserExecutableFolder`;
-- tot restul, inclusiv aplicațiile noi, rămâne pe Evergreen, fără internet.
-
-### Primii pași
-
-1. Descarci exe-ul din Releases și îl pornești (cere drepturi de administrator).
-2. **Aplicație → Instalează în Program Files**: copiază exe-ul, creează task-ul de sync și sincronizează regulile.
-3. **Runtime → Instalează din .cab…** cu pachetul Fixed Version x64 de la Microsoft.
-4. **Aplicații**: pornești programele, le selectezi și apeși **Permite internet**, apoi le repornești.
-
-**Dezinstalare:** Aplicație → Dezinstalează tot… Înainte de orice modificare se salvează un backup `.reg`
-în `C:\ProgramData\WebView2Guard\backups`.
-
-Cu **Malwarebytes WFC** și *Secure Rules* activ, adaugă grupul `WebView2 Guard` la grupurile autorizate.
-
-Licență: GNU GPL v3 sau ulterioară.
+© 2026 Ovidiu ([movidiu64](https://github.com/movidiu64))

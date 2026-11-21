@@ -1,4 +1,4 @@
-// WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
+// WebView2 Guard — Copyright (C) 2026 Ovidiu (movidiu64). Licensed under the GNU GPL v3 (GPL-3.0-only).
 //
 // UI strings, Romanian + English. To add a language: add a column to the tuple and a case in Pick().
 
@@ -46,8 +46,8 @@ public static class L
         ["msg.installDone"] = ("Aplicația a fost instalată în {0}, iar sync-ul automat e activ.\n\nO repornești acum din Program Files?",
             "The app was installed to {0} and auto sync is on.\n\nRestart it from Program Files now?"),
         ["msg.forgetAllowedFirst"] = ("Blochează aplicația înainte s-o elimini din listă.", "Block the application before removing it from the list."),
-        ["about.text"] = ("WebView2 Guard {0}\n\nWhitelist pentru accesul la internet al WebView2, pe fiecare aplicație.\nLicență: GNU GPL v3 sau ulterioară.\n{1}\n\nDeschizi pagina proiectului?",
-            "WebView2 Guard {0}\n\nPer-application internet whitelist for WebView2.\nLicense: GNU GPL v3 or later.\n{1}\n\nOpen the project page?"),
+        ["about.text"] = ("WebView2 Guard {0}\n\nWhitelist pentru accesul la internet al WebView2, pe fiecare aplicație.\nLicență: GNU GPL v3.\n{1}\n\nDeschizi pagina proiectului?",
+            "WebView2 Guard {0}\n\nPer-application internet whitelist for WebView2.\nLicense: GNU GPL v3.\n{1}\n\nOpen the project page?"),
         ["menu.app"] = ("Aplicație", "App"),
         ["menu.install"] = ("Instalează în Program Files", "Install to Program Files"),
         ["menu.language"] = ("Limbă", "Language"),

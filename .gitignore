@@ -6,3 +6,17 @@ publish/
 .vs/
 .vscode/
 *.swp
+/out/
+/dist/
+TestResults/
+
+# Local settings and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

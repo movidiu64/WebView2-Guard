@@ -1,4 +1,4 @@
-// WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
+// WebView2 Guard — Copyright (C) 2026 Ovidiu (movidiu64). Licensed under the GNU GPL v3 (GPL-3.0-only).
 
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
@@ -251,7 +251,7 @@ internal sealed class Pill : Label
     }
 }
 
-/// <summary>Underlined tab strip (Aplicații / Runtime / Firewall / Jurnal).</summary>
+/// <summary>Underlined tab strip (Applications / Runtime / Firewall / Log).</summary>
 internal sealed class TabStrip : Control
 {
     private readonly List<string> _tabs = new();

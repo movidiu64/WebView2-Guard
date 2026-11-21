@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- WebView2 Guard: the application icon (shield with a check mark). -->
+  <path d="M128 22C101 45 71 57 38 62V138C38 187 77 222 128 242C179 222 218 187 218 138V62C185 57 155 45 128 22Z"
+        fill="#005fb8" stroke="#004a8f" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M82 130L114 160L176 98" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -17,7 +17,7 @@
     <GuardFlavor Condition="'$(GuardFlavor)' == ''">fd</GuardFlavor>
     <Product>WebView2 Guard</Product>
     <Description>Per-application internet whitelist for Microsoft Edge WebView2.</Description>
-    <Copyright>Copyright (C) 2026 movidiu64. Licensed under GPLv3.</Copyright>
+    <Copyright>Copyright (C) 2026 Ovidiu (movidiu64). Licensed under the GNU GPL v3.</Copyright>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!-- CA1416: the whole app is Windows-only. -->

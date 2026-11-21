@@ -1,0 +1,123 @@
+# Windows build: unit tests and both release builds on every push. When main carries a version
+# (VersionPrefix/VersionSuffix in WebView2Guard.csproj) that has no release yet, the build creates
+# the v<version> tag and publishes the release, with that version's CHANGELOG.md section as notes.
+# Pushing a v* tag by hand does the same. Other branches publish a draft "Test build" release.
+name: Windows
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # publishing releases
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      # The version comes from the project file. Release builds (main and tags) carry it as is;
+      # other builds get a "dev.<run>" pre-release suffix, so a later release always counts as newer.
+      - name: Version
+        id: ver
+        run: |
+          $proj = 'src/WebView2Guard/WebView2Guard.csproj'
+          $prefix = (Select-Xml -Path $proj -XPath '//VersionPrefix').Node.InnerText
+          $suffix = "$((Select-Xml -Path $proj -XPath '//VersionSuffix').Node.InnerText)"
+          $version = if ($suffix) { "$prefix-$suffix" } else { $prefix }
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$version") {
+            Write-Host "::error::tag ${{ github.ref_name }} does not match version $version"; exit 1
+          }
+          $release = "${{ github.ref_type }}" -eq "tag" -or "${{ github.ref }}" -eq "refs/heads/main"
+          $build = if ($release) { $suffix } elseif ($suffix) { "$suffix.dev.${{ github.run_number }}" } else { "dev.${{ github.run_number }}" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prefix=$prefix" >> $env:GITHUB_OUTPUT
+          "suffix=$build" >> $env:GITHUB_OUTPUT
+          Write-Host "WebView2 Guard $version (build: $prefix$(if ($build) { "-$build" }))"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Tests
+        run: dotnet test tests/WebView2Guard.Tests/WebView2Guard.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+      - name: Publish (framework-dependent, single file)
+        run: >
+          dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64
+          --self-contained false -p:PublishSingleFile=true -o publish/fd
+          "-p:VersionPrefix=${{ steps.ver.outputs.prefix }}" "-p:VersionSuffix=${{ steps.ver.outputs.suffix }}"
+          -p:GuardFlavor=fd
+
+      - name: Publish (self-contained, single file)
+        run: >
+          dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64
+          --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -o publish/sc
+          "-p:VersionPrefix=${{ steps.ver.outputs.prefix }}" "-p:VersionSuffix=${{ steps.ver.outputs.suffix }}"
+          -p:GuardFlavor=selfcontained
+
+      # The in-app updater looks for these exact names and checks them against SHA256SUMS.txt.
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item publish/fd/WebView2Guard.exe out/WebView2Guard-win-x64.exe
+          Copy-Item publish/sc/WebView2Guard.exe out/WebView2Guard-win-x64-selfcontained.exe
+          Get-FileHash out/*.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content out/SHA256SUMS.txt
+          Get-Content out/SHA256SUMS.txt
+          Get-ChildItem out | Format-Table Name, Length
+
+      # Artifacts count against the account's shared storage: keep them briefly. Releases stay.
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: WebView2Guard-win-x64
+          path: out/
+          retention-days: 2
+          compression-level: 9
+
+      # Builds of other branches go to a single draft release, replaced each time: drafts are
+      # visible only to the repository's owner, the in-app updater ignores them and, unlike
+      # artifacts, they do not use Actions storage.
+      - name: Test build (draft release)
+        if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref != 'refs/heads/main'
+        run: |
+          $old = gh api "repos/${{ github.repository }}/releases?per_page=100" --jq '.[] | select(.draft and .name == "Test build") | .id'
+          foreach ($id in $old) { gh api -X DELETE "repos/${{ github.repository }}/releases/$id" | Out-Null }
+          $notes = "Branch ``${{ github.ref_name }}`` at ${{ github.sha }}, version ${{ steps.ver.outputs.prefix }}-${{ steps.ver.outputs.suffix }}. For testing only; the next test build replaces it."
+          gh release create "test-build" (Get-ChildItem out/*).FullName --draft --target "${{ github.sha }}" --title "Test build" --notes $notes
+
+      - name: Release
+        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/main')
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $files = (Get-ChildItem out/*).FullName
+          $existing = gh release view "v$v" --json assets --jq '.assets | length' 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            # A release made by hand on GitHub gets the files attached; a complete one is left alone.
+            if ([int]$existing -eq 0) { gh release upload "v$v" $files; Write-Host "files attached to v$v" }
+            else { Write-Host "v$v is already released" }
+            exit 0
+          }
+          $global:LASTEXITCODE = 0
+          # The changelog section of this version becomes the release notes.
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, "(?ms)^## \[?$([regex]::Escape($v))\]?[^\n]*\n(.*?)(?=^## |\z)")
+          if (-not $m.Success) { Write-Host "::error::CHANGELOG.md has no section for $v"; exit 1 }
+          $notes = $m.Groups[1].Value.Trim()
+          $notes += "`n`n**Download:** ``WebView2Guard-win-x64.exe`` needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0); ``WebView2Guard-win-x64-selfcontained.exe`` needs nothing. Windows 10/11, 64-bit, administrator rights. ``SHA256SUMS.txt`` has the checksums."
+          Set-Content notes.md $notes
+          $pre = if ($v -like '*-*') { '--prerelease' } else { '--latest' }
+          # gh creates the tag on this commit when it does not exist yet.
+          gh release create "v$v" $files --target "${{ github.sha }}" --title "WebView2 Guard $v" --notes-file notes.md $pre

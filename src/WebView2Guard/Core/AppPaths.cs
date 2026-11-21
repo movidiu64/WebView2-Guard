@@ -1,5 +1,5 @@
 // WebView2 Guard — per-application internet whitelist for Microsoft Edge WebView2.
-// Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
+// Copyright (C) 2026 Ovidiu (movidiu64). Licensed under the GNU GPL v3 (GPL-3.0-only).
 
 namespace WebView2Guard.Core;
 
