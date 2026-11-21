@@ -36,6 +36,8 @@ internal sealed class MainForm : Form, IShell
     private readonly System.Windows.Forms.Timer _hostsTimer = new() { Interval = 10_000 };
     private readonly System.Windows.Forms.Timer _updateTimer = new() { Interval = 60 * 60_000 };
     private EvergreenWatcher? _evergreenWatcher;
+    private readonly System.Windows.Forms.Timer _resizeTimer = new() { Interval = 60 };
+    private bool _sizing;
     private bool _evergreenSyncPending;
     private const string UpdateBalloon = "\u0001update";
     private bool _busy;
@@ -101,6 +103,7 @@ internal sealed class MainForm : Form, IShell
         }
         _apps.Enabled = true;
         _apps.BringToFront();
+        _resizeTimer.Tick += (_, _) => FlushResize();
 
         _tabs.Dock = DockStyle.Top;
         _tabs.BackColor = Bg;
@@ -181,6 +184,8 @@ internal sealed class MainForm : Form, IShell
             }
         }
         await RefreshAsync();
+        // All pages were laid out at the real size once (no first-view lag); from now on only the shown one follows resizes.
+        SwitchPage(_tabs.Selected);
         _hostsTimer.Start();
         StartEvergreenWatcher();
         _updateTimer.Tick += async (_, _) => await NotifyAppUpdateAsync();
@@ -338,6 +343,40 @@ internal sealed class MainForm : Form, IShell
         }
     }
 
+    // ---- resizing -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// While the user drags the window edge, the page is laid out at most every 60 ms instead of for every
+    /// pixel (measuring the cards and wrapping their text is what makes resizing heavy).
+    /// </summary>
+    protected override void OnResizeBegin(EventArgs e)
+    {
+        base.OnResizeBegin(e);
+        if (_sizing) return;
+        _sizing = true;
+        _content.SuspendLayout();
+        _resizeTimer.Start();
+    }
+
+    protected override void OnResizeEnd(EventArgs e)
+    {
+        base.OnResizeEnd(e);
+        if (!_sizing) return;
+        _sizing = false;
+        _resizeTimer.Stop();
+        _content.ResumeLayout(true);
+    }
+
+    private Size _flushedSize;
+
+    private void FlushResize()
+    {
+        if (!_sizing || _content.Size == _flushedSize) return;
+        _flushedSize = _content.Size;
+        _content.ResumeLayout(true);
+        _content.SuspendLayout();
+    }
+
     private void OnNewHostsDetected(IReadOnlyList<string> names)
     {
         if (IsDisposed || !IsHandleCreated) return;
@@ -439,6 +478,8 @@ internal sealed class MainForm : Form, IShell
         _hostsTimer.Dispose();
         _updateTimer.Stop();
         _updateTimer.Dispose();
+        _resizeTimer.Stop();
+        _resizeTimer.Dispose();
         _evergreenWatcher?.Dispose();
         _evergreenWatcher = null;
         base.OnFormClosed(e);
@@ -588,10 +629,23 @@ internal sealed class MainForm : Form, IShell
     private void SwitchPage(int index)
     {
         var page = _pages[index];
+        _content.SuspendLayout();
+        page.Dock = DockStyle.Fill; // lays it out at the current size if the window changed while it was behind
         page.Enabled = true;
         page.BringToFront();
         for (var i = 0; i < _pages.Length; i++)
-            if (i != index) _pages[i].Enabled = false; // keeps Tab focus out of the pages behind
+        {
+            if (i == index) continue;
+            _pages[i].Enabled = false; // keeps Tab focus out of the pages behind
+            // Pages behind keep their size and are not laid out again on every resize; the one shown is.
+            if (_pages[i].Dock != DockStyle.None)
+            {
+                var b = _pages[i].Bounds;
+                _pages[i].Dock = DockStyle.None;
+                _pages[i].Bounds = b;
+            }
+        }
+        _content.ResumeLayout(true);
         if (index == 3 && !_log.Loaded) _log.Reload();
     }
 
@@ -626,14 +680,17 @@ internal sealed class MainForm : Form, IShell
     {
         // In the tray the scan keeps running (hidden) so new apps can be announced.
         var hidden = !Visible || WindowState == FormWindowState.Minimized;
-        if (_busy || _refreshing || Current == null || (hidden && _tray == null) || (!hidden && _tabs.Selected != 0)) return;
+        if (_busy || _refreshing || Current == null || (hidden && _tray == null)) return;
         try
         {
             var hosts = await Task.Run(Guard.CollectHosts);
             if (Current == null || _busy || _refreshing) return;
             if (Current.Hosts.SequenceEqual(hosts)) return; // nothing changed: no repaint
-            Current = Current with { Hosts = hosts };
+            var before = Current;
+            Current = Guard.WithHosts(Current, hosts);
             _apps.Bind(Current);
+            // The banner follows the apps (e.g. "restart X" goes once X was restarted); repaint only on a change.
+            if (before.State != Current.State || !before.Problems.SequenceEqual(Current.Problems)) _banner.Bind(Current);
         }
         catch
         {

@@ -88,13 +88,15 @@ public static class Guard
                 : PolicyStore.IsOurs(folder) ? HostAccess.Allowed
                 : HostAccess.External;
 
-            var first = live.FirstOrDefault();
+            // Several instances (an old one still closing, a background helper): the newest decides.
+            var first = live.OrderByDescending(l => l.Started).FirstOrDefault();
             var runtimePath = first?.RuntimeExePath;
             var kind = Classify(runtimePath);
             var arch = first?.Arch is { } a && a != Arch.Unknown ? a : entry?.Arch ?? Arch.Unknown;
 
+            // Only the runtimes we control: an app on its own runtime ("other") does not get better by restarting.
             var needsRestart = first != null &&
-                               ((access == HostAccess.Allowed && kind != RuntimeKind.Allowed) ||
+                               ((access == HostAccess.Allowed && kind is RuntimeKind.Evergreen or RuntimeKind.Blocked) ||
                                 (access == HostAccess.Blocked && kind == RuntimeKind.Allowed));
 
             rows.Add(new HostRow(
@@ -126,6 +128,19 @@ public static class Guard
         return RuntimeKind.Other;
     }
 
+    /// <summary>The snapshot with a fresh app scan: problems and state are evaluated again (the banner follows).</summary>
+    public static GuardSnapshot WithHosts(GuardSnapshot s, List<HostRow> hosts)
+    {
+        var strict = s.Strict ?? StrictMode.Status();
+        var problems = Evaluate(hosts, s.X64, s.X86, s.Evergreen, s.Rules, s.RulesError, s.Task, strict);
+        return s with { Hosts = hosts, Problems = problems, State = StateOf(problems), Strict = strict };
+    }
+
+    private static OverallState StateOf(List<Problem> problems) =>
+        problems.Count == 0 ? OverallState.Active
+        : problems.Any(p => p.Severity == OverallState.Incomplete) ? OverallState.Incomplete
+        : OverallState.Warning;
+
     public static GuardSnapshot Collect(IProgress<CollectStep>? progress = null)
     {
         const int total = 4;
@@ -143,9 +158,7 @@ public static class Guard
         progress?.Report(new CollectStep(4, total, L.T("status.evaluate")));
         var strict = StrictMode.Status();
         var problems = Evaluate(hosts, x64, x86, evergreen, rules, rulesError, task, strict);
-        var state = problems.Count == 0 ? OverallState.Active
-            : problems.Any(p => p.Severity == OverallState.Incomplete) ? OverallState.Incomplete
-            : OverallState.Warning;
+        var state = StateOf(problems);
 
         var snapshot = new GuardSnapshot(hosts, x64, x86, evergreen, rules, rulesError, task, taskError, state, problems, strict);
         SnapshotCache.Save(snapshot);
