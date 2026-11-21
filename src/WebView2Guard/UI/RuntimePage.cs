@@ -30,8 +30,26 @@ internal sealed class RuntimePage : UserControl
         _grid.SetRows(new Control[] { _warning }, new Control[] { _x64, _x86 }, new Control[] { _evergreen, _help });
     }
 
+    private string? _signature;
+
+    private static string ComputeSignature(GuardSnapshot s)
+    {
+        static string Rt(RuntimeInfo r) =>
+            $"{r.Installed}/{r.Version}/{r.PreviousVersion}/{r.Marker?.InstalledAt:o}/{r.Marker?.Signer}";
+        return string.Join("|",
+            Rt(s.X64), Rt(s.X86),
+            string.Join(",", s.Evergreen.Select(e => e.Version)),
+            string.Join(",", s.Rules.Select(r => $"{r.Name}/{r.Action}/{r.Enabled}/{r.Program}")),
+            string.Join(",", s.Hosts.Where(h => h.Access == HostAccess.Allowed).Select(h => h.ExeName + "/" + h.Arch)));
+    }
+
     public void Bind(GuardSnapshot s)
     {
+        // Rebuilding the cards is the expensive part: skip it when nothing shown here changed.
+        var signature = ComputeSignature(s);
+        if (signature == _signature) return;
+        _signature = signature;
+
         SuspendLayout();
         BindWarning(s);
         BindRuntime(_x64, s.X64, s);

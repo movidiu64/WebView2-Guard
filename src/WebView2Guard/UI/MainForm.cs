@@ -258,6 +258,7 @@ internal sealed class MainForm : Form, IShell
         {
             var hosts = await Task.Run(Guard.CollectHosts);
             if (Current == null || _busy || _refreshing) return;
+            if (Current.Hosts.SequenceEqual(hosts)) return; // nothing changed: no repaint
             Current = Current with { Hosts = hosts };
             _apps.Bind(Current);
         }

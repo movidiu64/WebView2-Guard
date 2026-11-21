@@ -22,6 +22,8 @@ internal sealed class AppsPage : UserControl
     private readonly Label _counts = Ui.Lbl(string.Empty, Small, TextMuted);
     private readonly Details _details;
     private List<HostRow> _rows = new();
+    private HostRow? _detailsRow;
+    private bool _detailsShown;
 
     public AppsPage(IShell shell)
     {
@@ -96,6 +98,7 @@ internal sealed class AppsPage : UserControl
 
     public void Bind(GuardSnapshot s)
     {
+        if (_rows.SequenceEqual(s.Hosts) && _list.Items.Count > 0) return;
         _rows = s.Hosts;
         Fill();
     }
@@ -111,36 +114,64 @@ internal sealed class AppsPage : UserControl
             .ThenBy(r => r.ExeName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        _list.BeginUpdate();
-        _list.Items.Clear();
-        foreach (var r in rows)
-        {
-            var item = new ListViewItem(r.ExeName == "*" ? L.T("apps.globalName") : r.ExeName)
-            {
-                Tag = r,
-                UseItemStyleForSubItems = false,
-                ToolTipText = r.Path ?? r.PolicyFolder ?? string.Empty,
-                Font = Strong
-            };
-            var (accessText, accessColor) = AccessLabel(r.Access);
-            item.SubItems.Add(accessText, accessColor, Surface, Strong);
-            item.SubItems.Add(r.Running ? L.F("running.yes", r.Pid) : L.T("running.no"));
-            item.SubItems.Add(RuntimeText(r), r.NeedsRestart ? WarnText : Theme.Text, Surface, r.NeedsRestart ? Strong : Body);
-            item.SubItems.Add(r.Arch == Arch.Unknown ? "—" : r.Arch.Label());
-            item.SubItems.Add(SeenText(r));
+        var sameRows = _list.Items.Count == rows.Count &&
+                       _list.Items.Cast<ListViewItem>()
+                           .Select(i => ((HostRow)i.Tag!).ExeName)
+                           .SequenceEqual(rows.Select(r => r.ExeName), StringComparer.OrdinalIgnoreCase);
 
-            var back = r.Access == HostAccess.External ? ErrBg : r.NeedsRestart ? WarnRow : Surface;
-            foreach (ListViewItem.ListViewSubItem sub in item.SubItems) sub.BackColor = back;
-            if (!r.Running && r.Access != HostAccess.External)
-                for (var i = 2; i < item.SubItems.Count; i++) item.SubItems[i].ForeColor = TextMuted;
-            _list.Items.Add(item);
-            if (keep != null && r.ExeName.Equals(keep, StringComparison.OrdinalIgnoreCase)) item.Selected = true;
+        _list.BeginUpdate();
+        if (sameRows)
+        {
+            // Same rows in the same order: update in place, so selection and scroll position stay put.
+            for (var i = 0; i < rows.Count; i++)
+                if (!Equals(_list.Items[i].Tag, rows[i]))
+                    Populate(_list.Items[i], rows[i]);
+        }
+        else
+        {
+            var top = _list.TopItem?.Index ?? 0;
+            _list.Items.Clear();
+            foreach (var r in rows)
+            {
+                var item = new ListViewItem { UseItemStyleForSubItems = false, Font = Strong };
+                for (var c = 1; c < _list.Columns.Count; c++) item.SubItems.Add(string.Empty);
+                Populate(item, r);
+                _list.Items.Add(item);
+                if (keep != null && r.ExeName.Equals(keep, StringComparison.OrdinalIgnoreCase)) item.Selected = true;
+            }
+            if (top > 0 && top < _list.Items.Count) _list.TopItem = _list.Items[top];
         }
         _list.EndUpdate();
 
         _counts.Text = L.F("footer.counts", _rows.Count,
             _rows.Count(r => r.Access == HostAccess.Allowed), _rows.Count(r => r.NeedsRestart));
         UpdateSelection();
+    }
+
+    private static void Populate(ListViewItem item, HostRow r)
+    {
+        item.Tag = r;
+        item.Text = r.ExeName == "*" ? L.T("apps.globalName") : r.ExeName;
+        item.ToolTipText = r.Path ?? r.PolicyFolder ?? string.Empty;
+
+        var back = r.Access == HostAccess.External ? ErrBg : r.NeedsRestart ? WarnRow : Surface;
+        var muted = !r.Running && r.Access != HostAccess.External;
+        var (accessText, accessColor) = AccessLabel(r.Access);
+
+        Set(item.SubItems[0], item.Text, Theme.Text, Strong);
+        Set(item.SubItems[1], accessText, accessColor, Strong);
+        Set(item.SubItems[2], r.Running ? L.F("running.yes", r.Pid) : L.T("running.no"), muted ? TextMuted : Theme.Text, Body);
+        Set(item.SubItems[3], RuntimeText(r), r.NeedsRestart ? WarnText : muted ? TextMuted : Theme.Text, r.NeedsRestart ? Strong : Body);
+        Set(item.SubItems[4], r.Arch == Arch.Unknown ? "—" : r.Arch.Label(), muted ? TextMuted : Theme.Text, Body);
+        Set(item.SubItems[5], SeenText(r), muted ? TextMuted : Theme.Text, Body);
+
+        void Set(ListViewItem.ListViewSubItem sub, string text, Color fore, Font font)
+        {
+            sub.Text = text;
+            sub.ForeColor = fore;
+            sub.BackColor = back;
+            sub.Font = font;
+        }
     }
 
     public static (string Text, Color Color) AccessLabel(HostAccess a) => a switch
@@ -182,7 +213,12 @@ internal sealed class AppsPage : UserControl
         _allow.Enabled = r != null && !isGlobal && r.Access != HostAccess.Allowed;
         _block.Enabled = r != null && r.Access != HostAccess.Blocked;
         _forget.Enabled = r != null && r.Access == HostAccess.Blocked && !isGlobal;
-        _details.Show(r);
+        if (!_detailsShown || !Equals(_detailsRow, r))
+        {
+            _details.Show(r);
+            _detailsRow = r;
+            _detailsShown = true;
+        }
     }
 
     // ---- actions -------------------------------------------------------------------------------

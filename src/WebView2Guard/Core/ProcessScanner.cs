@@ -17,22 +17,43 @@ public static class ProcessScanner
     private static readonly Regex ExeNameArg =
         new(@"--webview-exe-name=(?:""(?<n>[^""]+)""|(?<n>[^\s""]+))", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static Dictionary<int, ProcInfo> Snapshot()
+    private const string Columns = "ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine";
+
+    /// <summary>All processes (expensive: reads every command line). Used only for "is this folder in use".</summary>
+    public static Dictionary<int, ProcInfo> Snapshot() => Query(null).ToDictionary(p => p.Pid);
+
+    private static List<ProcInfo> Query(string? where)
     {
-        var d = new Dictionary<int, ProcInfo>();
-        using var searcher = new ManagementObjectSearcher(
-            "SELECT ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine FROM Win32_Process");
+        var list = new List<ProcInfo>();
+        var wql = "SELECT " + Columns + " FROM Win32_Process" + (where == null ? string.Empty : " WHERE " + where);
+        using var searcher = new ManagementObjectSearcher(wql);
         using var collection = searcher.Get();
         foreach (var mo in collection)
         {
             using (mo)
             {
-                var pid = Convert.ToInt32(mo["ProcessId"]);
-                var ppid = Convert.ToInt32(mo["ParentProcessId"]);
-                d[pid] = new ProcInfo(pid, ppid, (mo["Name"] as string) ?? string.Empty,
-                    mo["ExecutablePath"] as string, mo["CommandLine"] as string);
+                list.Add(new ProcInfo(
+                    Convert.ToInt32(mo["ProcessId"]),
+                    Convert.ToInt32(mo["ParentProcessId"]),
+                    (mo["Name"] as string) ?? string.Empty,
+                    mo["ExecutablePath"] as string,
+                    mo["CommandLine"] as string));
             }
         }
+        return list;
+    }
+
+    /// <summary>
+    /// Only the WebView2 processes and their parents: much lighter than a full snapshot, so it can run every few seconds.
+    /// </summary>
+    private static Dictionary<int, ProcInfo> WebViewSnapshot()
+    {
+        var webviews = Query("Name='" + AppPaths.WebViewExe + "'");
+        var d = webviews.ToDictionary(p => p.Pid);
+        var parentIds = webviews.Select(w => w.ParentPid).Where(id => id > 0 && !d.ContainsKey(id)).Distinct().ToList();
+        if (parentIds.Count > 0)
+            foreach (var p in Query(string.Join(" OR ", parentIds.Select(id => "ProcessId=" + id))))
+                d[p.Pid] = p;
         return d;
     }
 
@@ -42,7 +63,7 @@ public static class ProcessScanner
     /// </summary>
     public static List<WebViewHost> FindHosts(Dictionary<int, ProcInfo>? snapshot = null)
     {
-        var snap = snapshot ?? Snapshot();
+        var snap = snapshot ?? WebViewSnapshot();
         var webviews = snap.Values
             .Where(p => p.Name.Equals(AppPaths.WebViewExe, StringComparison.OrdinalIgnoreCase))
             .ToList();

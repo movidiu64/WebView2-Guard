@@ -28,6 +28,7 @@ internal abstract class GuardDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
+        ShowIcon = false;
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(S(560), S(440));
 

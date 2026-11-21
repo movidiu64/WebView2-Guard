@@ -50,8 +50,18 @@ internal sealed class FirewallPage : UserControl
         _grid.SetRows(new Control[] { header }, new Control[] { rulesCard }, new Control[] { _task, _wfc });
     }
 
+    private string? _signature;
+
     public void Bind(GuardSnapshot s)
     {
+        var t = s.Task;
+        var signature = string.Join("|",
+            string.Join(",", s.Rules.Select(r => $"{r.Name}/{r.Action}/{r.Enabled}/{r.Program}/{r.FileExists}")),
+            s.RulesError, s.TaskError, File.Exists(AppPaths.InstalledExe),
+            t == null ? "-" : $"{t.Exists}/{t.State}/{t.LastRun:o}/{t.LastResult}/{t.Command}");
+        if (signature == _signature) return;
+        _signature = signature;
+
         _rules.BeginUpdate();
         _rules.Items.Clear();
         foreach (var r in s.Rules)

@@ -43,6 +43,7 @@ internal sealed class GuardButton : Button
         get => _kind;
         set
         {
+            if (_kind == value) return;
             _kind = value;
             Font = IsFilled(value) ? Strong : Body;
             FitWidth();
@@ -179,14 +180,25 @@ internal class Card : Panel
     public Color Fill
     {
         get => _fill;
-        set { _fill = value; BackColor = value; Invalidate(); }
+        set
+        {
+            if (_fill == value) return;
+            _fill = value;
+            BackColor = value;
+            Invalidate();
+        }
     }
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Color Stroke
     {
         get => _stroke;
-        set { _stroke = value; Invalidate(); }
+        set
+        {
+            if (_stroke == value) return;
+            _stroke = value;
+            Invalidate();
+        }
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -221,6 +233,7 @@ internal sealed class Pill : Label
 
     public void Set(string text, Color fill, Color fore)
     {
+        if (Text == text && _fill == fill && ForeColor == fore) return;
         Text = text;
         _fill = fill;
         ForeColor = fore;
@@ -338,6 +351,15 @@ internal sealed class TabStrip : Control
     protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
 }
 
+/// <summary>ListView with double buffering (no flicker when rows are updated).</summary>
+internal sealed class BufferedListView : ListView
+{
+    public BufferedListView()
+    {
+        DoubleBuffered = true; // LVS_EX_DOUBLEBUFFER on the native list view
+    }
+}
+
 /// <summary>Factory helpers for labels and layouts.</summary>
 internal static class Ui
 {
@@ -422,7 +444,7 @@ internal static class Ui
 
     public static ListView List()
     {
-        var lv = new ListView
+        var lv = new BufferedListView
         {
             View = View.Details,
             FullRowSelect = true,

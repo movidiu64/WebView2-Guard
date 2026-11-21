@@ -88,7 +88,7 @@ public static class Guard
                 live.Sum(l => l.ProcessCount),
                 runtimePath,
                 kind,
-                first != null ? DateTime.Now : entry?.LastSeen,
+                entry?.LastSeen, // stable while running, so unchanged rows compare equal
                 needsRestart));
         }
         return rows;
