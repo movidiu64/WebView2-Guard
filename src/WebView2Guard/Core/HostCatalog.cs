@@ -61,7 +61,8 @@ public static class HostCatalog
         var changed = false;
         foreach (var h in seen)
         {
-            if (h.ExeName == "?" || !PolicyStore.IsValidExeName(h.ExeName)) continue;
+            if (h.ExeName == "?" || !PolicyStore.IsValidExeName(h.ExeName) ||
+                h.ExeName.Equals(AppPaths.WebViewExe, StringComparison.OrdinalIgnoreCase)) continue;
             var e = list.FirstOrDefault(x => x.ExeName.Equals(h.ExeName, StringComparison.OrdinalIgnoreCase));
             if (e == null)
             {

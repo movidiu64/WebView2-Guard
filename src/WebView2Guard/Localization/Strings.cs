@@ -67,6 +67,7 @@ public static class L
         ["banner.warning"] = ("Atenție", "Attention"),
         ["banner.incomplete"] = ("Protecție incompletă", "Protection incomplete"),
         ["banner.loading"] = ("Se încarcă…", "Loading…"),
+        ["banner.evergreen1"] = ("Evergreen blocat · 1 versiune", "Evergreen blocked · 1 version"),
         ["banner.evergreen"] = ("Evergreen blocat · {0} versiuni", "Evergreen blocked · {0} versions"),
         ["banner.runtime"] = ("Runtime permis {0} · {1}", "Allowed runtime {0} · {1}"),
         ["banner.runtimeNone"] = ("Runtime permis neinstalat", "No allowed runtime installed"),

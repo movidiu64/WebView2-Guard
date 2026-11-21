@@ -764,7 +764,7 @@ internal sealed class Banner : Card
         {
             case OverallState.Active:
             {
-                var parts = new List<string> { L.F("banner.evergreen", s.Evergreen.Count) };
+                var parts = new List<string> { L.F(s.Evergreen.Count == 1 ? "banner.evergreen1" : "banner.evergreen", s.Evergreen.Count) };
                 var rt = s.X64.Installed ? s.X64 : s.X86.Installed ? s.X86 : null;
                 parts.Add(rt != null ? L.F("banner.runtime", rt.Arch.Label(), rt.Version ?? "?") : L.T("banner.runtimeNone"));
                 if (s.Task is { Exists: true } task)

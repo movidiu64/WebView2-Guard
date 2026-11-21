@@ -63,9 +63,13 @@ public static class Guard
 
         var policies = PolicyStore.ReadAll();
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in catalog) names.Add(c.ExeName);
+        // msedgewebview2.exe is the runtime itself, never a host (older versions could record it).
+        foreach (var c in catalog.Where(c => !c.ExeName.Equals(AppPaths.WebViewExe, StringComparison.OrdinalIgnoreCase)))
+            names.Add(c.ExeName);
         foreach (var p in policies.Keys) names.Add(p);
-        foreach (var h in running.Where(x => x.ExeName != "?")) names.Add(h.ExeName);
+        foreach (var h in running.Where(x => x.ExeName != "?" &&
+                                             !x.ExeName.Equals(AppPaths.WebViewExe, StringComparison.OrdinalIgnoreCase)))
+            names.Add(h.ExeName);
 
         var rows = new List<HostRow>();
         foreach (var name in names)
