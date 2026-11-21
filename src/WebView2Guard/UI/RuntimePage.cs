@@ -18,6 +18,7 @@ internal sealed class RuntimePage : UserControl
     private readonly StackCard _x64 = new();
     private readonly StackCard _x86 = new();
     private readonly StackCard _evergreen = new();
+    private readonly StackCard _strict = new();
     private readonly StackCard _help = new();
     private List<RuntimeDownload>? _available;
     private DateTime? _checkedAt;
@@ -30,7 +31,8 @@ internal sealed class RuntimePage : UserControl
         Controls.Add(_grid);
         _warning.Visible = false;
         BindUpdates();
-        _grid.SetRows(new Control[] { _warning }, new Control[] { _x64, _x86 }, new Control[] { _evergreen, _help });
+        _grid.SetRows(new Control[] { _warning }, new Control[] { _x64, _x86 }, new Control[] { _evergreen, _strict },
+            new Control[] { _help });
     }
 
     private string? _signature;
@@ -42,6 +44,7 @@ internal sealed class RuntimePage : UserControl
         return string.Join("|",
             Rt(s.X64), Rt(s.X86),
             string.Join(",", s.Evergreen.Select(e => e.Version)),
+            $"{s.Strict?.Enabled}/{s.Strict?.Active}/{s.Strict?.PolicyTarget}/{string.Join(",", s.Strict?.Copies ?? new())}",
             string.Join(",", s.Rules.Select(r => $"{r.Name}/{r.Action}/{r.Enabled}/{r.Program}")),
             string.Join(",", s.Hosts.Where(h => h.Access == HostAccess.Allowed).Select(h => h.ExeName + "/" + h.Arch)));
     }
@@ -58,6 +61,7 @@ internal sealed class RuntimePage : UserControl
         BindRuntime(_x64, s.X64, s);
         BindRuntime(_x86, s.X86, s);
         BindEvergreen(s);
+        BindStrict(s);
         ResumeLayout();
         _grid.MarkDirty();
     }
@@ -190,6 +194,55 @@ internal sealed class RuntimePage : UserControl
         }
         list.Add(new WrapLabel(L.T("rt.evergreen.note"), Small, TextMuted));
         _evergreen.SetContent(list.ToArray());
+    }
+
+    /// <summary>"Strict mode" card: every app without its own policy runs on a blocked copy of the runtime.</summary>
+    private void BindStrict(GuardSnapshot s)
+    {
+        var st = s.Strict ?? new StrictStatus(false, null, false, new List<string>());
+        var pill = new Pill();
+        if (st.Active) pill.Set(L.T("strict.on"), OkBg, OkText);
+        else if (st.Enabled) pill.Set(L.T("strict.incomplete"), ErrBg, ErrText);
+        else pill.Set(L.T("strict.off"), NeutralBg, NeutralText);
+        var head = StackCard.Heading(L.T("strict.title"), pill);
+        var text = new WrapLabel(L.T("strict.text"), Body, TextMuted);
+
+        var list = new List<Control> { head, text };
+        if (st.Active && st.PolicyTarget is { } target)
+        {
+            var version = Path.GetFileName(target);
+            var exe = Path.Combine(target, AppPaths.WebViewExe);
+            var hasRule = s.Rules.Any(r => !r.IsAllow && r.Enabled && AppPaths.SamePath(r.ExpandedProgram, exe));
+            var users = s.Hosts.Count(h => h.Running && h.RuntimeKind == RuntimeKind.Blocked);
+            list.Add(StackCard.Fields(
+                StackCard.Field(L.T("strict.copy"), version + " · " +
+                    L.T(StrictMode.IsHardLinked(version) ? "strict.hardlinks" : "strict.fullCopy")),
+                StackCard.Field(L.T("rt.rule"), hasRule ? L.T("strict.ruleActive") : L.T("rt.ruleMissing"),
+                    color: hasRule ? null : ErrText),
+                StackCard.Field(L.T("rt.path"), target, full: true, mono: true),
+                StackCard.Field(L.T("strict.runningOnCopy"), users.ToString(CultureInfo.CurrentCulture))));
+            list.Add(new WrapLabel(L.T("strict.restartNote"), Small, TextMuted));
+        }
+
+        var toggle = new GuardButton(L.T(st.Enabled ? "strict.disable" : "strict.enable"),
+            st.Enabled ? Glyph.Undo : Glyph.Shield, st.Enabled ? ButtonKind.Secondary : ButtonKind.Primary)
+        {
+            Enabled = st.Enabled || s.X64.Installed
+        };
+        toggle.Click += async (_, _) =>
+        {
+            var enable = !st.Enabled;
+            if (!Ui.Confirm(_shell.Window, L.T(enable ? "confirm.strictOn" : "confirm.strictOff"))) return;
+            await _shell.RunAsync(() =>
+            {
+                if (enable) StrictMode.Enable();
+                else StrictMode.Disable();
+            }, status: L.T("status.strict"));
+        };
+        list.Add(Ui.Row(toggle));
+        if (!s.X64.Installed && !st.Enabled)
+            list.Add(new WrapLabel(L.T("err.strictNeedsRuntime"), Small, TextMuted));
+        _strict.SetContent(list.ToArray());
     }
 
     private static bool IsBlocked(GuardSnapshot s, EvergreenInstall e) =>

@@ -148,6 +148,9 @@ public sealed class Settings
 
     public DateTime? LastAppCheck { get; set; }
 
+    /// <summary>Every app without its own policy uses a blocked copy of the allowed runtime ("*" policy).</summary>
+    public bool StrictMode { get; set; }
+
     public static Settings Load()
     {
         try

@@ -44,6 +44,9 @@ public static class AppPaths
     public static string RuntimeRoot => Path.Combine(InstallDir, "Runtime");
     public static string RuntimeDir(Arch a) => Path.Combine(RuntimeRoot, a.Label());
     public static string RuntimePrevDir(Arch a) => RuntimeDir(a) + ".prev";
+
+    /// <summary>Strict mode: blocked copies of the allowed x64 runtime, one folder per version.</summary>
+    public static string BlockedRoot => Path.Combine(RuntimeRoot, "Blocked");
     public static string RuntimeExe(Arch a) => Path.Combine(RuntimeDir(a), WebViewExe);
 
     public static string DataDir => Path.Combine(

@@ -18,7 +18,7 @@ public sealed record SyncResult(int Added, int Removed);
 
 /// <summary>
 /// Outbound Windows Firewall rules in the group "WebView2 Guard":
-/// Allow for each installed Fixed runtime, Block for each Evergreen version folder.
+/// Allow for each installed Fixed runtime, Block for each Evergreen version folder and each strict-mode copy.
 /// </summary>
 public static class FirewallManager
 {
@@ -70,6 +70,9 @@ public static class FirewallManager
                 desired.Add(new Desired($"{Prefix}Allow-{a.Label()}", $"WebView2 Guard - Allow runtime {a.Label()}",
                     "Allow", exe));
         }
+        foreach (var (version, dir) in StrictMode.Copies())
+            desired.Add(new Desired($"{Prefix}BlockCopy-{version}", $"WebView2 Guard - Block copy {version} (strict mode)",
+                "Block", Path.Combine(dir, AppPaths.WebViewExe)));
         foreach (var e in RuntimeManager.Evergreen())
         {
             var user = e.User == null ? string.Empty : "-" + SafeName(e.User);

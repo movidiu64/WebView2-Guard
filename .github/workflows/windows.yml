@@ -213,37 +213,36 @@ jobs:
           $r = Probe 'https://example.com/'
           if ($r.success -or $r.browserPath -like "$fixed*") { throw 'blocking again did not take effect' }
 
-          # EXPERIMENT 2 (strict mode): hard-link mirror of the runtime; a 32-bit app under '*' -> x64 copy.
-          try {
-            $blocked = "$dir\Runtime\Blocked\x64\158"
-            $src = "$dir\Runtime\x64"
-            foreach ($d in Get-ChildItem $src -Recurse -Directory) { New-Item -ItemType Directory -Force (Join-Path $blocked $d.FullName.Substring($src.Length)) | Out-Null }
-            New-Item -ItemType Directory -Force $blocked | Out-Null
-            $n = 0
-            foreach ($f in Get-ChildItem $src -Recurse -File) { New-Item -ItemType HardLink -Path (Join-Path $blocked $f.FullName.Substring($src.Length)) -Target $f.FullName | Out-Null; $n++ }
-            Write-Host "EXP hardlinks: $n files; links of msedgewebview2.exe: $((fsutil hardlink list "$src\msedgewebview2.exe") -join ' | ')"
-            icacls "$dir\Runtime\Blocked" /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /Q | Out-Null
-            New-NetFirewallRule -Name 'EXP-Blocked' -DisplayName 'EXP Blocked' -Direction Outbound -Action Block -Program "$blocked\msedgewebview2.exe" | Out-Null
-            New-Item -Force "$pol\BrowserExecutableFolder" | Out-Null
-            Set-ItemProperty "$pol\BrowserExecutableFolder" -Name '*' -Value $blocked
-            $r = Probe 'https://example.com/'
-            Write-Host "EXP A (x64 app, '*' -> hard-link copy): browser=$($r.browserPath) success=$($r.success) status=$($r.status) $($r.error)"
-            $probe = (Resolve-Path probe86/WebView2Probe.exe).Path
-            $r = Probe 'https://example.com/'
-            Write-Host "EXP B (x86 app, '*' -> x64 copy): browser=$($r.browserPath) success=$($r.success) status=$($r.status) $($r.error)"
-            Set-ItemProperty "$pol\BrowserExecutableFolder" -Name 'WebView2Probe.exe' -Value $src
-            $r = Probe 'https://example.com/'
-            Write-Host "EXP C (x86 app, own value -> Allowed x64): browser=$($r.browserPath) success=$($r.success) status=$($r.status) $($r.error)"
-            Remove-ItemProperty "$pol\BrowserExecutableFolder" -Name 'WebView2Probe.exe'
-            Remove-ItemProperty "$pol\BrowserExecutableFolder" -Name '*'
-            $probe = (Resolve-Path probe/WebView2Probe.exe).Path
-            Remove-NetFirewallRule -Name 'EXP-Blocked'
-            Start-Sleep 5
-            Remove-Item "$dir\Runtime\Blocked" -Recurse -Force
-            Write-Host "EXP: Allowed still intact: $(Test-Path "$src\msedgewebview2.exe")"
-          } catch { Write-Warning "EXP failed: $_" }
+          # 8. Strict mode: every app without its own policy runs on the blocked copy (64- and 32-bit), the
+          #    copy is hard-linked, allowed apps keep the allowed runtime, and turning it off cleans up.
+          Guard '--strict on' | Out-Null
+          $copy = Value BrowserExecutableFolder '*'
+          if ($copy -notlike "$dir\Runtime\Blocked\*") { throw "strict: * -> $copy" }
+          if (-not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like 'WV2G-BlockCopy-*' })) { throw 'strict: no block rule for the copy' }
+          $links = @(fsutil hardlink list "$copy\msedgewebview2.exe")
+          if ($links.Count -lt 2) { throw "strict: the copy is not hard-linked ($links)" }
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$copy*" -or $r.success) { throw "strict: x64 app on $($r.browserPath), success=$($r.success)" }
+          $probe64 = $probe; $probe = (Resolve-Path probe86/WebView2Probe.exe).Path
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$copy*" -or $r.success) { throw "strict: x86 app on $($r.browserPath), success=$($r.success)" }
+          $probe = $probe64
+          Guard '--allow WebView2Probe.exe' | Out-Null
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$fixed\*" -or -not $r.success) { throw "strict: allowed app on $($r.browserPath), success=$($r.success)" }
+          Guard '--block WebView2Probe.exe' | Out-Null
+          if ((Guard '--status') -notmatch 'Strict mode: on') { throw 'strict: status' }
+          Start-Sleep 5
+          Guard '--strict off' | Out-Null
+          if (Value BrowserExecutableFolder '*') { throw 'strict off: * policy left' }
+          if (Test-Path "$dir\Runtime\Blocked") { throw 'strict off: the unused copy was not removed' }
+          if (Rules | Where-Object { $_.Name -like 'WV2G-BlockCopy-*' }) { throw 'strict off: copy rule left' }
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -like "$dir\*" -or $r.success) { throw "strict off: app on $($r.browserPath), success=$($r.success)" }
+          Guard '--strict on' | Out-Null   # uninstall must clean it up
+          Start-Sleep 5
 
-          # 8. Sync, then uninstall: nothing of ours is left.
+          # 9. Sync, then uninstall: nothing of ours is left.
           Guard '--sync' | Out-Null
           Guard '--uninstall' | Out-Null
           if (Value BrowserExecutableFolder testhost.exe) { throw 'uninstall: policy left' }
@@ -251,11 +250,13 @@ jobs:
           if ((Rules).Count -ne 0) { throw "uninstall: $((Rules).Count) rules left" }
           if (Get-ScheduledTask -TaskPath '\WebView2Guard\' -ErrorAction SilentlyContinue) { throw 'uninstall: tasks left' }
           if (Test-Path "$dir\Runtime\x64") { throw 'uninstall: runtime left' }
+          if (Value BrowserExecutableFolder '*') { throw 'uninstall: strict-mode policy left' }
+          if (Test-Path "$dir\Runtime\Blocked") { throw 'uninstall: blocked copy left' }
           if (Select-String -Path "$env:ProgramData\WebView2Guard\guard.log" -Pattern 'ERROR' -SimpleMatch -Quiet) {
             Get-Content "$env:ProgramData\WebView2Guard\guard.log" | Write-Host
             Write-Warning 'guard.log has errors (expected ones come from the negative tests)'
           }
-          Write-Host 'install, runtime, allow, domains, export/import, window, Evergreen watcher, WebView2 app, uninstall: ok'
+          Write-Host 'install, runtime, allow, domains, export/import, window, Evergreen watcher, WebView2 app, strict mode, uninstall: ok'
 
       # Artifacts count against the account's shared storage: keep them briefly. Releases stay.
       - uses: actions/upload-artifact@v5

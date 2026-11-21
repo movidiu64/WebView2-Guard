@@ -213,3 +213,16 @@ public class EvergreenWatcherTests
         Assert.Equal(expected, EvergreenWatcher.IsRelevant(@"C:\EW\Application", path));
 }
 
+public class StrictModeTests
+{
+    [Fact]
+    public void Blocked_copies_are_told_apart_from_the_allowed_runtime()
+    {
+        Assert.True(StrictMode.IsBlockedCopy(Path.Combine(AppPaths.BlockedRoot, "158.0.4370.33", "msedgewebview2.exe")));
+        Assert.True(StrictMode.IsBlockedCopy(Path.Combine(AppPaths.BlockedRoot, "158.0.4370.33")));
+        Assert.False(StrictMode.IsBlockedCopy(AppPaths.RuntimeExe(Arch.X64)));
+        Assert.False(StrictMode.IsBlockedCopy(AppPaths.RuntimeDir(Arch.X86)));
+        Assert.False(StrictMode.IsBlockedCopy(null));
+    }
+}
+
