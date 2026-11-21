@@ -40,6 +40,7 @@ jobs:
           Get-Content dist/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
+        continue-on-error: true # the account's artifact storage quota must not fail the build
         with:
           name: WebView2Guard-win-x64
           path: dist/

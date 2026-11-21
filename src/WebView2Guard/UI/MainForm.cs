@@ -14,6 +14,7 @@ internal interface IShell
     IWin32Window Window { get; }
     Task RunAsync(Action work, bool refresh = true);
     Task RefreshAsync();
+    Task SyncAsync();
     void ShowTab(int index);
 }
 
@@ -317,7 +318,7 @@ internal sealed class MainForm : Form, IShell
                 await RunAsync(SyncTask.Create);
                 break;
             case ProblemAction.Sync:
-                await RunAsync(() => Guard.SyncFirewall());
+                await SyncAsync();
                 break;
             case ProblemAction.OpenRuntime:
                 ShowTab(1);
@@ -328,9 +329,26 @@ internal sealed class MainForm : Form, IShell
         }
     }
 
+    /// <summary>
+    /// True if the user accepts that the first sync blocks Evergreen for every app (asked only while no block rule exists).
+    /// </summary>
+    private bool ConfirmFirstBlock()
+    {
+        var s = Current;
+        if (s == null || s.Rules.Any(r => !r.IsAllow)) return true;
+        return Ui.Confirm(this, L.T("confirm.firstBlock"), danger: true);
+    }
+
+    public async Task SyncAsync()
+    {
+        if (!ConfirmFirstBlock()) return;
+        await RunAsync(() => Guard.SyncFirewall());
+    }
+
     /// <summary>Copies the app to Program Files, enables the sync task and offers to restart from there.</summary>
     private async Task InstallAsync()
     {
+        if (!ConfirmFirstBlock()) return;
         var installed = false;
         await RunAsync(() =>
         {

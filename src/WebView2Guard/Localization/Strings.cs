@@ -210,6 +210,8 @@ public static class L
         ["col.action"] = ("Acțiune", "Action"),
         ["col.program"] = ("Program", "Program"),
         ["col.state"] = ("Stare", "State"),
+        ["confirm.firstBlock"] = ("Primul sync blochează accesul la internet prin WebView2 pentru toate aplicațiile, mai puțin cele pe care le permiți. Outlook nou, Teams, Widgets sau ferestrele de login pot rămâne fără conținut web până le aprobi în tab-ul Aplicații.\n\nContinui?",
+            "The first sync blocks internet access through WebView2 for every application except the ones you allow. New Outlook, Teams, Widgets or sign-in windows may show no web content until you allow them in the Applications tab.\n\nContinue?"),
         ["confirm.removeAllRules"] = ("Elimini toate regulile din grupul „WebView2 Guard”? Evergreen nu va mai fi blocat de această aplicație.",
             "Remove all rules in the “WebView2 Guard” group? Evergreen will no longer be blocked by this app."),
         ["task.title"] = ("Sync automat", "Auto sync"),

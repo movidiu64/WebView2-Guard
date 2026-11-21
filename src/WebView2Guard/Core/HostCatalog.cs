@@ -67,11 +67,13 @@ public static class HostCatalog
                 e = new HostEntry { ExeName = h.ExeName };
                 list.Add(e);
                 added.Add(h.ExeName);
+                changed = true;
             }
-            if (h.ExePath != null) e.Path = h.ExePath;
-            if (h.Arch != Arch.Unknown) e.Arch = h.Arch;
+            if (h.ExePath != null && h.ExePath != e.Path) { e.Path = h.ExePath; changed = true; }
+            if (h.Arch != Arch.Unknown && h.Arch != e.Arch) { e.Arch = h.Arch; changed = true; }
+            // LastSeen is only persisted every few minutes to avoid rewriting the file on every scan.
+            if (e.LastSeen == null || DateTime.Now - e.LastSeen.Value > TimeSpan.FromMinutes(5)) changed = true;
             e.LastSeen = DateTime.Now;
-            changed = true;
         }
         if (changed)
         {

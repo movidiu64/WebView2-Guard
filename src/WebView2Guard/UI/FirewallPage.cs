@@ -25,7 +25,7 @@ internal sealed class FirewallPage : UserControl
         var title = Ui.Lbl(L.F("fw.title", FirewallManager.Group), Theme.Heading);
         title.Margin = P(0, 6, 16, 8);
         var sync = new GuardButton(L.T("fw.sync"), Glyph.Refresh, ButtonKind.Primary);
-        sync.Click += async (_, _) => await _shell.RunAsync(() => Guard.SyncFirewall());
+        sync.Click += async (_, _) => await _shell.SyncAsync();
         var removeAll = new GuardButton(L.T("fw.removeAll"), Glyph.Delete, ButtonKind.Danger);
         removeAll.Click += async (_, _) =>
         {
