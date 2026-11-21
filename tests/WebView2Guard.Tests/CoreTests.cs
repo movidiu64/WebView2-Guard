@@ -117,6 +117,17 @@ public class PowerShellHelperTests
     public void AsJsonArray(string input, string expected) => Assert.Equal(expected, PowerShell.AsJsonArray(input));
 
     [Fact]
+    public void CleanError_reads_clixml_errors()
+    {
+        var stderr = "#< CLIXML\r\n<Objs Version=\"1.1.0.1\" xmlns=\"http://schemas.microsoft.com/powershell/2004/04\">" +
+                     "<S S=\"Error\">Get-AuthenticodeSignature : The module could not be loaded._x000D__x000A_</S>" +
+                     "<S S=\"Error\">At line:1 char:1 &amp; more_x000D__x000A_</S></Objs>";
+        Assert.Equal("Get-AuthenticodeSignature : The module could not be loaded. At line:1 char:1 & more",
+            PowerShell.CleanError(stderr));
+        Assert.Equal("plain error", PowerShell.CleanError("plain error"));
+    }
+
+    [Fact]
     public void Q_escapes_single_quotes() => Assert.Equal("'O''Brien'", PowerShell.Q("O'Brien"));
 }
 

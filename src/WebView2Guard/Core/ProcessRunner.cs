@@ -16,7 +16,7 @@ public static class ProcessRunner
     public static string Sys(string exe) => Path.Combine(Environment.SystemDirectory, exe);
 
     public static RunResult Run(string fileName, IEnumerable<string> args, int timeoutMs = 120_000,
-        Encoding? encoding = null)
+        Encoding? encoding = null, Action<ProcessStartInfo>? configure = null)
     {
         var psi = new ProcessStartInfo(fileName)
         {
@@ -31,6 +31,7 @@ public static class ProcessRunner
             psi.StandardErrorEncoding = encoding;
         }
         foreach (var a in args) psi.ArgumentList.Add(a);
+        configure?.Invoke(psi);
 
         using var p = Process.Start(psi) ?? throw new InvalidOperationException("Cannot start " + fileName);
         var stdout = p.StandardOutput.ReadToEndAsync();
@@ -59,7 +60,10 @@ public static class PowerShell
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(full));
         var r = ProcessRunner.Run(Exe,
             new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded },
-            timeoutMs, Encoding.UTF8);
+            timeoutMs, Encoding.UTF8,
+            // Started from PowerShell 7, PSModulePath points at its modules, which Windows PowerShell 5.1
+            // cannot load ("module could not be loaded"): let 5.1 use its own default path.
+            psi => psi.Environment.Remove("PSModulePath"));
         if (r.ExitCode != 0)
             throw new InvalidOperationException("PowerShell: " + CleanError(r.Combined));
         return r.StdOut.Trim();
@@ -76,8 +80,19 @@ public static class PowerShell
     /// <summary>Single-quoted PowerShell string literal.</summary>
     public static string Q(string s) => "'" + s.Replace("'", "''") + "'";
 
-    private static string CleanError(string text)
+    private static readonly System.Text.RegularExpressions.Regex ClixmlError =
+        new(@"<S S=""Error"">(.*?)</S>", System.Text.RegularExpressions.RegexOptions.Singleline);
+
+    public static string CleanError(string text)
     {
+        // With -EncodedCommand, errors come as CLIXML on stderr: keep the error strings, decode the escapes.
+        var errors = ClixmlError.Matches(text).Select(m => System.Net.WebUtility.HtmlDecode(m.Groups[1].Value)
+            .Replace("_x000D_", "").Replace("_x000A_", " ")).Where(x => x.Trim().Length > 0).ToList();
+        if (errors.Count > 0)
+        {
+            var msg = string.Join("", errors).Trim();
+            return msg.Length > 600 ? msg[..600] + "…" : msg;
+        }
         // Strip CLIXML noise that PowerShell may emit on stderr with -EncodedCommand.
         var lines = text.Split('\n')
             .Select(l => l.TrimEnd('\r'))
