@@ -1,10 +1,10 @@
 // WebView2 Guard — per-application internet whitelist for Microsoft Edge WebView2.
-// Copyright (C) 2026 movidiu64
+// Copyright (C) 2026 Ovidiu (movidiu64)
 //
 // This program is free software: you can redistribute it and/or modify it under the terms of the
-// GNU General Public License as published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version. This program is distributed WITHOUT ANY WARRANTY;
-// see the GNU General Public License for details: <https://www.gnu.org/licenses/>.
+// GNU General Public License version 3 as published by the Free Software Foundation (GPL-3.0-only).
+// This program is distributed WITHOUT ANY WARRANTY; see the GNU General Public License for details:
+// <https://www.gnu.org/licenses/>.
 
 using WebView2Guard.Core;
 using WebView2Guard.Localization;
@@ -24,6 +24,8 @@ internal static class Program
 
         if (args.Any(a => a.Equals("--sync", StringComparison.OrdinalIgnoreCase)))
             return RunSync();
+        if (Cli.IsCommand(args))
+            return Cli.Run(args);
 
         const string showEventName = @"Global\WebView2Guard.Show";
         const string quitEventName = @"Global\WebView2Guard.Quit";

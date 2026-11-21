@@ -102,6 +102,24 @@ public static class HostCatalog
         return e;
     }
 
+    /// <summary>Adds an app by name (e.g. from an imported configuration) without overwriting what is known.</summary>
+    public static void Ensure(string exeName, string? path, Arch arch)
+    {
+        var list = Load();
+        var e = list.FirstOrDefault(x => x.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase));
+        if (e == null)
+        {
+            list.Add(new HostEntry { ExeName = exeName, Path = path, Arch = arch, AddedManually = true });
+            Save(list);
+        }
+        else if ((e.Path == null && path != null) || (e.Arch == Arch.Unknown && arch != Arch.Unknown))
+        {
+            e.Path ??= path;
+            if (e.Arch == Arch.Unknown) e.Arch = arch;
+            Save(list);
+        }
+    }
+
     public static void Forget(string exeName)
     {
         var list = Load();

@@ -5,7 +5,7 @@ labels: bug
 ---
 
 **Version and operating system**
-<!-- e.g. WebView2 Guard 0.1.0 (self-contained), Windows 11 24H2. App → About shows the version. -->
+<!-- e.g. WebView2 Guard 0.1.1 (self-contained), Windows 11 24H2. App → About shows the version. -->
 
 **Steps to reproduce**
 1.

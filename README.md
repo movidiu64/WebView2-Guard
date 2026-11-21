@@ -14,7 +14,7 @@ Everything else that opens web content through Microsoft Edge WebView2 stays off
 ![UI: English | Română](https://img.shields.io/badge/UI-English%20%7C%20Rom%C3%A2n%C4%83-lightgrey)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ovidiu64-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/ovidiu64)
 
-<img src="docs/screenshot.png" alt="WebView2 Guard: the Applications tab with allowed and blocked apps and the protection status" width="100%">
+<img src="docs/screenshot.png" alt="WebView2 Guard: protection active, the allowed x64 runtime from Microsoft, Evergreen blocked and automatic runtime updates" width="100%">
 
 </div>
 
@@ -29,6 +29,7 @@ Many desktop programs (Autodesk products, Office, Teams, Widgets…) show web pa
 - ⬇️ **Runtime from Microsoft**: install the Fixed runtime from a `.cab` you downloaded, or let the app download the newest one from Microsoft's page and keep it up to date. The Microsoft signature is checked before anything is replaced, and the previous version is kept for rollback.
 - 🔥 **Its own firewall rules only**: everything lives in the `WebView2 Guard` group; works next to Malwarebytes Windows Firewall Control and other firewall tools.
 - ↩️ **Reversible**: a `.reg` backup before every policy change, and *Uninstall everything* puts the system back as it was.
+- 📦 **Export / import and command line**: move your decisions to another PC, or script installs with `--install`, `--allow`, `--import` and the other commands.
 - 🌐 English and Romanian interface; updates itself from GitHub Releases, with SHA-256 checks.
 
 ## Quick start
@@ -54,7 +55,7 @@ dotnet test tests/WebView2Guard.Tests        # unit tests
 dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-Every push runs the tests and builds both variants on Windows. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
+Every push runs the unit tests, builds both variants and tests the app end to end on a Windows runner: install, firewall rules, runtime download, policies, uninstall, and a real WebView2 app that must stay offline while blocked, get online once allowed and reach only its allowed domains. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
 
 ## Support
 
