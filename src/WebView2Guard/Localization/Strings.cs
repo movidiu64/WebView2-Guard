@@ -1,0 +1,325 @@
+// WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
+//
+// UI strings, Romanian + English. To add a language: add a column to the tuple and a case in Pick().
+
+using System.Globalization;
+
+namespace WebView2Guard.Localization;
+
+public static class L
+{
+    /// <summary>Active language code: "ro" or "en".</summary>
+    public static string Lang { get; private set; } = "en";
+
+    /// <param name="setting">"auto", "ro" or "en".</param>
+    public static void Init(string? setting)
+    {
+        Lang = setting switch
+        {
+            "ro" => "ro",
+            "en" => "en",
+            _ => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ro" ? "ro" : "en"
+        };
+    }
+
+    public static string T(string key) =>
+        Map.TryGetValue(key, out var v) ? (Lang == "ro" ? v.Ro : v.En) : key;
+
+    public static string F(string key, params object?[] args)
+    {
+        var template = T(key);
+        try
+        {
+            return string.Format(CultureInfo.CurrentCulture, template, args);
+        }
+        catch (FormatException)
+        {
+            return template;
+        }
+    }
+
+    private static readonly Dictionary<string, (string Ro, string En)> Map = new()
+    {
+        // ---- general / menu ----
+        ["msg.alreadyRunning"] = ("WebView2 Guard rulează deja.", "WebView2 Guard is already running."),
+        ["msg.error"] = ("Eroare", "Error"),
+        ["msg.installDone"] = ("Aplicația a fost instalată în {0}, iar sync-ul automat e activ.\n\nO repornești acum din Program Files?",
+            "The app was installed to {0} and auto sync is on.\n\nRestart it from Program Files now?"),
+        ["msg.forgetAllowedFirst"] = ("Blochează aplicația înainte s-o elimini din listă.", "Block the application before removing it from the list."),
+        ["about.text"] = ("WebView2 Guard {0}\n\nWhitelist pentru accesul la internet al WebView2, pe fiecare aplicație.\nLicență: GNU GPL v3 sau ulterioară.\n{1}\n\nDeschizi pagina proiectului?",
+            "WebView2 Guard {0}\n\nPer-application internet whitelist for WebView2.\nLicense: GNU GPL v3 or later.\n{1}\n\nOpen the project page?"),
+        ["menu.app"] = ("Aplicație", "App"),
+        ["menu.install"] = ("Instalează în Program Files", "Install to Program Files"),
+        ["menu.language"] = ("Limbă", "Language"),
+        ["menu.lang.auto"] = ("Automat (limba sistemului)", "Automatic (system language)"),
+        ["menu.lang.ro"] = ("Română", "Română"),
+        ["menu.lang.en"] = ("English", "English"),
+        ["menu.dataFolder"] = ("Deschide folderul de date", "Open data folder"),
+        ["menu.undo"] = ("Dezinstalează tot…", "Uninstall everything…"),
+        ["menu.about"] = ("Despre", "About"),
+        ["tab.apps"] = ("Aplicații", "Applications"),
+        ["tab.runtime"] = ("Runtime", "Runtime"),
+        ["tab.firewall"] = ("Firewall", "Firewall"),
+        ["tab.log"] = ("Jurnal", "Log"),
+
+        // ---- banner ----
+        ["banner.active"] = ("Protecție activă", "Protection active"),
+        ["banner.warning"] = ("Atenție", "Attention"),
+        ["banner.incomplete"] = ("Protecție incompletă", "Protection incomplete"),
+        ["banner.loading"] = ("Se încarcă…", "Loading…"),
+        ["banner.evergreen"] = ("Evergreen blocat · {0} versiuni", "Evergreen blocked · {0} versions"),
+        ["banner.runtime"] = ("Runtime permis {0} · {1}", "Allowed runtime {0} · {1}"),
+        ["banner.runtimeNone"] = ("Runtime permis neinstalat", "No allowed runtime installed"),
+        ["banner.taskActive"] = ("Sync automat · activ, ultima rulare {0}", "Auto sync · on, last run {0}"),
+        ["banner.taskNever"] = ("Sync automat · activ", "Auto sync · on"),
+        ["banner.more"] = ("(+{0})", "(+{0})"),
+        ["action.install"] = ("Instalează în Program Files", "Install to Program Files"),
+        ["action.createTask"] = ("Activează sync automat", "Enable auto sync"),
+        ["action.sync"] = ("Repară acum", "Fix now"),
+        ["action.openRuntime"] = ("Deschide Runtime", "Open Runtime"),
+        ["action.openApps"] = ("Vezi aplicațiile", "Show applications"),
+
+        // ---- problems ----
+        ["prob.rulesUnreadable"] = ("Regulile de firewall nu pot fi citite: {0}", "Firewall rules cannot be read: {0}"),
+        ["prob.evergreenUnblocked"] = ("Evergreen {0} nu are regulă de blocare.", "Evergreen {0} has no block rule."),
+        ["prob.allowRuleMissing"] = ("Runtime-ul permis {0} nu are regulă de permitere în firewall.", "The allowed {0} runtime has no allow rule in the firewall."),
+        ["prob.runtimeMissing"] = ("Runtime-ul permis {0} nu e instalat, dar e cerut de: {1}.", "The allowed {0} runtime is not installed but is needed by: {1}."),
+        ["prob.runtimeOld"] = ("Runtime-ul permis {0} ({1}) e mai vechi decât Evergreen ({2}). Descarcă ultimul Fixed Version și actualizează.",
+            "The allowed {0} runtime ({1}) is older than Evergreen ({2}). Download the latest Fixed Version and update."),
+        ["prob.notInstalled"] = ("Aplicația nu e instalată în Program Files, deci sync-ul automat nu poate fi activat.",
+            "The app is not installed in Program Files, so auto sync cannot be enabled."),
+        ["prob.noTask"] = ("Sync-ul automat e oprit: versiunile noi Evergreen nu primesc regulă de blocare până la un sync manual.",
+            "Auto sync is off: new Evergreen versions get no block rule until a manual sync."),
+        ["prob.needsRestart"] = ("Repornește: {0} (rulează încă pe runtime-ul vechi).", "Restart: {0} (still running on the old runtime)."),
+        ["prob.globalPolicy"] = ("Există o politică globală (*) setată din afara aplicației.", "A global (*) policy was set outside this app."),
+
+        // ---- applications tab ----
+        ["apps.refresh"] = ("Reîmprospătează", "Refresh"),
+        ["apps.allow"] = ("Permite internet", "Allow internet"),
+        ["apps.block"] = ("Blochează", "Block"),
+        ["apps.add"] = ("Adaugă exe…", "Add exe…"),
+        ["apps.forget"] = ("Elimină din listă", "Remove from list"),
+        ["apps.onlyRunning"] = ("Doar cele care rulează acum", "Only running now"),
+        ["apps.search"] = ("Caută", "Search"),
+        ["apps.searchPlaceholder"] = ("nume exe…", "exe name…"),
+        ["apps.globalName"] = ("* (toate aplicațiile)", "* (all applications)"),
+        ["col.app"] = ("Aplicație", "Application"),
+        ["col.access"] = ("Acces internet", "Internet access"),
+        ["col.running"] = ("Rulează", "Running"),
+        ["col.runtime"] = ("Runtime folosit acum", "Runtime in use"),
+        ["col.arch"] = ("Arh.", "Arch"),
+        ["col.lastSeen"] = ("Văzut ultima dată", "Last seen"),
+        ["access.allowed"] = ("Permis", "Allowed"),
+        ["access.blocked"] = ("Blocat", "Blocked"),
+        ["access.external"] = ("Extern", "External"),
+        ["running.yes"] = ("da · PID {0}", "yes · PID {0}"),
+        ["running.no"] = ("nu", "no"),
+        ["rt.evergreen"] = ("Evergreen", "Evergreen"),
+        ["rt.allowed"] = ("Permis {0}", "Allowed {0}"),
+        ["rt.other"] = ("Alt runtime", "Other runtime"),
+        ["rt.restart"] = ("repornește", "restart"),
+        ["seen.now"] = ("acum", "now"),
+        ["seen.today"] = ("azi, {0}", "today, {0}"),
+        ["seen.yesterday"] = ("ieri, {0}", "yesterday, {0}"),
+        ["details.none"] = ("Selectează o aplicație din listă.", "Select an application from the list."),
+        ["details.path"] = ("Cale", "Path"),
+        ["details.process"] = ("Proces", "Process"),
+        ["details.processValue"] = ("PID {0} · {1} · {2} procese WebView2", "PID {0} · {1} · {2} WebView2 processes"),
+        ["details.notRunning"] = ("nu rulează", "not running"),
+        ["details.runtime"] = ("Runtime folosit", "Runtime in use"),
+        ["details.policy"] = ("Politică registry", "Registry policy"),
+        ["details.policyNone"] = ("nesetată", "not set"),
+        ["details.openFolder"] = ("Deschide folderul", "Open folder"),
+        ["details.copy"] = ("Copiază numele exe", "Copy exe name"),
+        ["details.noteAllow"] = ("Permite internet scrie BrowserExecutableFolder\\{0} spre runtime-ul permis {1}. Aplicația trebuie repornită.",
+            "Allow internet writes BrowserExecutableFolder\\{0} pointing to the allowed {1} runtime. The app must be restarted."),
+        ["details.noteBlock"] = ("Blochează șterge valoarea din registry; după repornire aplicația revine pe Evergreen, care e blocat.",
+            "Block removes the registry value; after a restart the app goes back to Evergreen, which is blocked."),
+        ["footer.hint"] = ("După Permite / Blochează, repornește aplicația ca să-și schimbe runtime-ul.",
+            "After Allow / Block, restart the application so it switches runtime."),
+        ["footer.counts"] = ("{0} intrări · {1} permise · {2} necesită repornire", "{0} entries · {1} allowed · {2} need a restart"),
+        ["confirm.replaceExternal"] = ("Politica existentă pentru {0} indică:\n{1}\n\nO înlocuiești cu runtime-ul permis?",
+            "The existing policy for {0} points to:\n{1}\n\nReplace it with the allowed runtime?"),
+        ["confirm.removeExternal"] = ("Politica pentru {0} a fost setată din afara aplicației:\n{1}\n\nO ștergi?",
+            "The policy for {0} was set outside this app:\n{1}\n\nDelete it?"),
+        ["dlg.addExe"] = ("Alege executabilul aplicației", "Choose the application executable"),
+        ["filter.exe"] = ("Programe (*.exe)|*.exe", "Programs (*.exe)|*.exe"),
+        ["filter.cab"] = ("Runtime WebView2 Fixed (*.cab)|*.cab", "WebView2 Fixed runtime (*.cab)|*.cab"),
+
+        // ---- runtime tab ----
+        ["rt.card.title"] = ("Runtime permis · {0}", "Allowed runtime · {0}"),
+        ["pill.installed"] = ("Instalat", "Installed"),
+        ["pill.notInstalled"] = ("Neinstalat", "Not installed"),
+        ["pill.blocked"] = ("Blocat", "Blocked"),
+        ["pill.notBlocked"] = ("Neblocat", "Not blocked"),
+        ["pill.active"] = ("Activ", "On"),
+        ["pill.inactive"] = ("Inactiv", "Off"),
+        ["rt.version"] = ("Versiune", "Version"),
+        ["rt.installedAt"] = ("Instalat", "Installed"),
+        ["rt.path"] = ("Cale", "Path"),
+        ["rt.signature"] = ("Semnătură", "Signature"),
+        ["rt.previous"] = ("Versiune anterioară", "Previous version"),
+        ["rt.previousKept"] = ("{0} (păstrată)", "{0} (kept)"),
+        ["rt.usedBy"] = ("Folosit de", "Used by"),
+        ["rt.usedByValue"] = ("{0} aplicații", "{0} applications"),
+        ["rt.rule"] = ("Regulă firewall", "Firewall rule"),
+        ["rt.ruleActive"] = ("Permite · activă", "Allow · active"),
+        ["rt.ruleMissing"] = ("lipsește", "missing"),
+        ["rt.update"] = ("Actualizează din .cab…", "Update from .cab…"),
+        ["rt.install"] = ("Instalează din .cab…", "Install from .cab…"),
+        ["rt.rollback"] = ("Revino la anterioara", "Roll back"),
+        ["rt.remove"] = ("Șterge", "Remove"),
+        ["rt.x64Note"] = ("Necesar pentru aplicațiile pe 64 de biți pe care le aprobi. Instalează-l din fișierul .cab descărcat de la Microsoft.",
+            "Needed for the 64-bit applications you allow. Install it from the .cab downloaded from Microsoft."),
+        ["rt.x86Note"] = ("Necesar doar pentru aplicații pe 32 de biți. Dacă aprobi o aplicație x86 fără acest runtime, Permite îți cere să-l instalezi întâi.",
+            "Only needed for 32-bit applications. If you allow an x86 app without it, Allow asks you to install it first."),
+        ["rt.olderThanEvergreen"] = ("Runtime-ul permis x64 ({0}) e mai vechi decât Evergreen ({1}). Descarcă ultimul Fixed Version x64 și actualizează.",
+            "The allowed x64 runtime ({0}) is older than Evergreen ({1}). Download the latest x64 Fixed Version and update."),
+        ["rt.evergreen.title"] = ("Runtime Evergreen (Windows)", "Evergreen runtime (Windows)"),
+        ["rt.evergreen.current"] = ("curentă", "current"),
+        ["rt.evergreen.leftover"] = ("rămasă după update", "left over after an update"),
+        ["rt.evergreen.ruleOk"] = ("regulă de blocare", "block rule"),
+        ["rt.evergreen.ruleMissing"] = ("fără regulă de blocare", "no block rule"),
+        ["rt.evergreen.none"] = ("Nicio versiune Evergreen găsită.", "No Evergreen version found."),
+        ["rt.evergreen.note"] = ("Se actualizează singur prin Windows. Sync-ul adaugă regula de blocare pentru fiecare versiune nouă și o șterge pe cea a versiunilor dispărute.",
+            "Updated by Windows. Sync adds a block rule for each new version and removes the rules of versions that are gone."),
+        ["rt.help.title"] = ("Ce fișier descarc?", "Which file do I download?"),
+        ["rt.help.step1"] = ("Pe pagina WebView2 de la Microsoft, secțiunea Fixed Version.", "On Microsoft's WebView2 page, section Fixed Version."),
+        ["rt.help.step2"] = ("Alegi cea mai nouă versiune și arhitectura x64 (x86 doar pentru aplicații pe 32 de biți).",
+            "Pick the newest version and the x64 architecture (x86 only for 32-bit applications)."),
+        ["rt.help.step3"] = ("Descarci fișierul Microsoft.WebView2.FixedVersionRuntime.<versiune>.x64.cab.",
+            "Download Microsoft.WebView2.FixedVersionRuntime.<version>.x64.cab."),
+        ["rt.help.step4"] = ("Apeși Instalează / Actualizează din .cab și îl alegi. Extragerea, verificarea semnăturii, permisiunile și înlocuirea se fac automat.",
+            "Click Install / Update from .cab and choose it. Extraction, signature check, permissions and replacement are automatic."),
+        ["rt.help.link"] = ("Pagina de descărcare Microsoft", "Microsoft download page"),
+        ["confirm.removeRuntime"] = ("Ștergi runtime-ul permis {0}? Aplicațiile aprobate pe {0} rămân fără internet până îl reinstalezi.",
+            "Remove the allowed {0} runtime? Allowed {0} applications lose internet access until you reinstall it."),
+        ["confirm.rollback"] = ("Revii la versiunea {0} a runtime-ului {1}?", "Roll back the {1} runtime to version {0}?"),
+
+        // ---- firewall tab ----
+        ["fw.title"] = ("Reguli din grupul „{0}”", "Rules in group “{0}”"),
+        ["fw.sync"] = ("Sincronizează acum", "Sync now"),
+        ["fw.removeAll"] = ("Elimină toate regulile", "Remove all rules"),
+        ["fw.allow"] = ("Permite", "Allow"),
+        ["fw.block"] = ("Blochează", "Block"),
+        ["fw.stateOk"] = ("Activă · fișier există", "Active · file exists"),
+        ["fw.stateDisabled"] = ("Dezactivată", "Disabled"),
+        ["fw.stateMissing"] = ("Fișier lipsă · se elimină la sync", "File missing · removed on sync"),
+        ["fw.error"] = ("Nu pot citi regulile: {0}", "Cannot read the rules: {0}"),
+        ["col.rule"] = ("Regulă", "Rule"),
+        ["col.action"] = ("Acțiune", "Action"),
+        ["col.program"] = ("Program", "Program"),
+        ["col.state"] = ("Stare", "State"),
+        ["confirm.removeAllRules"] = ("Elimini toate regulile din grupul „WebView2 Guard”? Evergreen nu va mai fi blocat de această aplicație.",
+            "Remove all rules in the “WebView2 Guard” group? Evergreen will no longer be blocked by this app."),
+        ["task.title"] = ("Sync automat", "Auto sync"),
+        ["task.name"] = ("Task", "Task"),
+        ["task.runsAs"] = ("Rulează ca", "Runs as"),
+        ["task.triggers"] = ("Declanșatoare", "Triggers"),
+        ["task.triggersValue"] = ("La pornire + la fiecare oră", "At startup + every hour"),
+        ["task.lastRun"] = ("Ultima rulare", "Last run"),
+        ["task.lastRunValue"] = ("{0} · {1}", "{0} · {1}"),
+        ["task.ok"] = ("reușită", "succeeded"),
+        ["task.failed"] = ("cod {0}", "code {0}"),
+        ["task.never"] = ("încă nu a rulat", "not run yet"),
+        ["task.exe"] = ("Executabil", "Executable"),
+        ["task.runNow"] = ("Rulează acum", "Run now"),
+        ["task.disable"] = ("Dezactivează", "Disable"),
+        ["task.enable"] = ("Activează", "Enable"),
+        ["task.offNote"] = ("Task-ul programat ține regulile la zi când Windows actualizează Evergreen: rulează ca SYSTEM la pornire și o dată pe oră.",
+            "The scheduled task keeps the rules current when Windows updates Evergreen: it runs as SYSTEM at startup and hourly."),
+        ["task.needsInstall"] = ("Instalează întâi aplicația în Program Files (meniul Aplicație). Task-ul rulează ca SYSTEM, deci exe-ul trebuie să stea într-un folder protejat.",
+            "Install the app to Program Files first (App menu). The task runs as SYSTEM, so the exe must live in a protected folder."),
+        ["task.error"] = ("Nu pot citi task-ul: {0}", "Cannot read the task: {0}"),
+        ["wfc.title"] = ("Folosești Malwarebytes WFC?", "Using Malwarebytes WFC?"),
+        ["wfc.text"] = ("Cu Secure Rules activ, WFC șterge regulile create de alte programe. Adaugă grupul de mai jos la grupurile autorizate din setările WFC, altfel regulile dispar după fiecare sync.",
+            "With Secure Rules on, WFC deletes rules created by other programs. Add the group below to WFC's authorized groups, otherwise the rules disappear after every sync."),
+        ["wfc.groupName"] = ("Numele grupului de reguli", "Rule group name"),
+        ["wfc.copy"] = ("Copiază numele grupului", "Copy group name"),
+        ["wfc.note"] = ("În modul Medium Filtering din WFC, versiunile noi Evergreen sunt blocate oricum până la următorul sync. Regulile de aici sunt a doua plasă de siguranță.",
+            "In WFC's Medium Filtering mode new Evergreen versions are blocked anyway until the next sync. These rules are a second safety net."),
+
+        // ---- log tab ----
+        ["log.all"] = ("Toate", "All"),
+        ["log.info"] = ("Info", "Info"),
+        ["log.warn"] = ("Avertismente", "Warnings"),
+        ["log.error"] = ("Erori", "Errors"),
+        ["log.copy"] = ("Copiază", "Copy"),
+        ["log.openFile"] = ("Deschide fișierul", "Open file"),
+        ["log.fileNote"] = ("Fișier: {0} · rotație la 1 MB", "File: {0} · rotated at 1 MB"),
+        ["col.time"] = ("Ora", "Time"),
+        ["col.level"] = ("Nivel", "Level"),
+        ["col.message"] = ("Mesaj", "Message"),
+        ["level.info"] = ("INFO", "INFO"),
+        ["level.warn"] = ("AVERT", "WARN"),
+        ["level.error"] = ("EROARE", "ERROR"),
+
+        // ---- install dialog ----
+        ["inst.title"] = ("Actualizează runtime-ul", "Update runtime"),
+        ["inst.step.extract"] = ("Extragere cu expand în folder temporar", "Extract with expand into a temporary folder"),
+        ["inst.step.signature"] = ("Verificare semnătură Microsoft", "Check Microsoft signature"),
+        ["inst.step.signatureOk"] = ("Semnătură validă · Microsoft Corporation", "Valid signature · Microsoft Corporation"),
+        ["inst.step.arch"] = ("Arhitectură și versiune", "Architecture and version"),
+        ["inst.step.archValue"] = ("Arhitectură {0}", "Architecture {0}"),
+        ["inst.step.inUse"] = ("Verificare: runtime-ul actual nu e folosit", "Check: current runtime not in use"),
+        ["inst.step.inUseOk"] = ("Runtime-ul actual nu e folosit de aplicații", "Current runtime is not in use"),
+        ["inst.step.inUseBusy"] = ("Runtime-ul actual e folosit de aplicații", "Current runtime is in use by applications"),
+        ["inst.step.replace"] = ("Înlocuire, permisiuni App Container, regulă firewall", "Replace, App Container permissions, firewall rule"),
+        ["inst.busy"] = ("Închide aplicațiile de mai jos, apoi apasă Reîncearcă:", "Close the applications below, then click Retry:"),
+        ["inst.cancel"] = ("Anulează", "Cancel"),
+        ["inst.retry"] = ("Reîncearcă", "Retry"),
+        ["inst.close"] = ("Închide", "Close"),
+        ["inst.done"] = ("Runtime {0} {1} instalat.", "Runtime {0} {1} installed."),
+        ["inst.failed"] = ("Instalare eșuată: {0}", "Installation failed: {0}"),
+
+        // ---- undo dialog ----
+        ["undo.title"] = ("Dezinstalează tot", "Uninstall everything"),
+        ["undo.text"] = ("Readuce sistemul la starea de dinainte. Toate aplicațiile vor folosi din nou runtime-ul Evergreen, fără blocare.",
+            "Restores the previous state. All applications use the Evergreen runtime again, unblocked."),
+        ["undo.legend"] = ("Ce se elimină", "What gets removed"),
+        ["undo.policies"] = ("Politicile din registry create de aplicație ({0} aplicații)", "Registry policies created by this app ({0} applications)"),
+        ["undo.rules"] = ("Regulile din grupul „WebView2 Guard” ({0} reguli)", "Rules in the “WebView2 Guard” group ({0} rules)"),
+        ["undo.task"] = ("Task-ul de sync automat și scurtătura din Start", "The auto sync task and the Start menu shortcut"),
+        ["undo.runtimes"] = ("Runtime-urile Fixed din Program Files\\WebView2Guard\\Runtime", "The Fixed runtimes in Program Files\\WebView2Guard\\Runtime"),
+        ["undo.note"] = ("Înainte de ștergere se salvează un backup al cheii de registry în ProgramData\\WebView2Guard\\backups. Politicile puse de alte programe nu sunt atinse.",
+            "A backup of the registry key is saved to ProgramData\\WebView2Guard\\backups first. Policies set by other programs are not touched."),
+        ["undo.confirm"] = ("Dezinstalează", "Uninstall"),
+        ["undo.done"] = ("Gata. După ce închizi aplicația poți șterge folderul C:\\Program Files\\WebView2Guard.",
+            "Done. After closing the app you can delete the C:\\Program Files\\WebView2Guard folder."),
+
+        // ---- errors (core) ----
+        ["err.runtimeBusy"] = ("Runtime-ul e folosit de aplicații care rulează.", "The runtime is in use by running applications."),
+        ["err.cabMissing"] = ("Fișierul .cab nu există.", "The .cab file does not exist."),
+        ["err.expand"] = ("expand.exe a eșuat: {0}", "expand.exe failed: {0}"),
+        ["err.noWebViewInCab"] = ("Arhiva nu conține msedgewebview2.exe. Ai ales pachetul Fixed Version?", "The archive contains no msedgewebview2.exe. Did you pick the Fixed Version package?"),
+        ["err.arch"] = ("Arhitectură nesuportată: {0}. Folosește pachetul x64 sau x86.", "Unsupported architecture: {0}. Use the x64 or x86 package."),
+        ["err.signature"] = ("Semnătură invalidă pentru {0} (stare: {1}, semnatar: {2}). Instalarea a fost anulată și nimic nu s-a modificat.",
+            "Invalid signature on {0} (status: {1}, signer: {2}). Installation cancelled; nothing was changed."),
+        ["err.noPrevious"] = ("Nu există o versiune anterioară păstrată.", "No previous version is kept."),
+        ["err.icacls"] = ("icacls a eșuat: {0}", "icacls failed: {0}"),
+        ["err.notInstalled"] = ("Aplicația trebuie instalată întâi în Program Files.", "The app must be installed to Program Files first."),
+        ["err.badExeName"] = ("Nume de exe invalid: {0}", "Invalid exe name: {0}"),
+        ["err.runtimeMissingForAllow"] = ("Runtime-ul permis {0} nu e instalat. Instalează-l din tab-ul Runtime, apoi încearcă din nou.",
+            "The allowed {0} runtime is not installed. Install it from the Runtime tab, then try again."),
+
+        // ---- log messages ----
+        ["log.runtimeInstalled"] = ("Runtime {0} instalat: {1} · semnătură {2} validă · permisiuni App Container aplicate",
+            "Runtime {0} installed: {1} · valid {2} signature · App Container permissions applied"),
+        ["log.runtimeRolledBack"] = ("Runtime {0}: revenire la {1}", "Runtime {0}: rolled back to {1}"),
+        ["log.runtimeRemoved"] = ("Runtime {0} șters", "Runtime {0} removed"),
+        ["log.ruleRemoved"] = ("Firewall: regulă eliminată {0}", "Firewall: rule removed {0}"),
+        ["log.ruleAdded"] = ("Firewall: regulă adăugată {0}", "Firewall: rule added {0}"),
+        ["log.rulesRemovedAll"] = ("Firewall: toate regulile din grup au fost eliminate", "Firewall: all rules in the group removed"),
+        ["log.taskCreated"] = ("Task-ul de sync automat a fost creat", "Auto sync task created"),
+        ["log.taskDeleted"] = ("Task-ul de sync automat a fost șters", "Auto sync task deleted"),
+        ["log.newHost"] = ("Aplicație nouă detectată: {0} · blocată implicit", "New application detected: {0} · blocked by default"),
+        ["log.archUnknownAssumedX64"] = ("Arhitectura lui {0} e necunoscută; s-a presupus x64", "Architecture of {0} unknown; assumed x64"),
+        ["log.policySet"] = ("Politică setată: {0} → {1}", "Policy set: {0} → {1}"),
+        ["log.policyRemoved"] = ("Politică ștearsă: {0}", "Policy removed: {0}"),
+        ["log.syncNoChange"] = ("Sync: nicio schimbare", "Sync: no change"),
+        ["log.syncDone"] = ("Sync: {0} reguli adăugate, {1} eliminate", "Sync: {0} rules added, {1} removed"),
+        ["log.undoDone"] = ("Dezinstalare completă", "Uninstall finished"),
+        ["log.installed"] = ("Instalat în {0}", "Installed to {0}"),
+        ["log.shortcutFailed"] = ("Nu am putut crea scurtătura din Start: {0}", "Could not create the Start menu shortcut: {0}")
+    };
+}

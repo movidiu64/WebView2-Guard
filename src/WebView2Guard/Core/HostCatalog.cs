@@ -1,0 +1,132 @@
+// WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
+
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace WebView2Guard.Core;
+
+public sealed class HostEntry
+{
+    public string ExeName { get; set; } = string.Empty;
+    public string? Path { get; set; }
+    public Arch Arch { get; set; }
+    public DateTime? LastSeen { get; set; }
+    public bool AddedManually { get; set; }
+}
+
+/// <summary>Apps seen using WebView2 (or added by hand), kept so they show up when not running.</summary>
+public static class HostCatalog
+{
+    private static readonly object Gate = new();
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public static List<HostEntry> Load()
+    {
+        lock (Gate)
+        {
+            try
+            {
+                if (!File.Exists(AppPaths.HostsFile)) return new List<HostEntry>();
+                return JsonSerializer.Deserialize<List<HostEntry>>(File.ReadAllText(AppPaths.HostsFile), Json)
+                       ?? new List<HostEntry>();
+            }
+            catch
+            {
+                return new List<HostEntry>();
+            }
+        }
+    }
+
+    private static void Save(List<HostEntry> list)
+    {
+        lock (Gate)
+        {
+            AppPaths.EnsureDataDir();
+            var tmp = AppPaths.HostsFile + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(list, Json));
+            File.Move(tmp, AppPaths.HostsFile, overwrite: true);
+        }
+    }
+
+    /// <summary>Adds/updates running hosts. Returns the new list and the names seen for the first time.</summary>
+    public static (List<HostEntry> All, List<string> New) MergeSeen(IEnumerable<WebViewHost> seen)
+    {
+        var list = Load();
+        var added = new List<string>();
+        var changed = false;
+        foreach (var h in seen)
+        {
+            if (h.ExeName == "?" || !PolicyStore.IsValidExeName(h.ExeName)) continue;
+            var e = list.FirstOrDefault(x => x.ExeName.Equals(h.ExeName, StringComparison.OrdinalIgnoreCase));
+            if (e == null)
+            {
+                e = new HostEntry { ExeName = h.ExeName };
+                list.Add(e);
+                added.Add(h.ExeName);
+            }
+            if (h.ExePath != null) e.Path = h.ExePath;
+            if (h.Arch != Arch.Unknown) e.Arch = h.Arch;
+            e.LastSeen = DateTime.Now;
+            changed = true;
+        }
+        if (changed)
+        {
+            try { Save(list); } catch { /* non-fatal */ }
+        }
+        return (list, added);
+    }
+
+    public static HostEntry AddManual(string exePath)
+    {
+        var list = Load();
+        var name = System.IO.Path.GetFileName(exePath);
+        var e = list.FirstOrDefault(x => x.ExeName.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (e == null)
+        {
+            e = new HostEntry { ExeName = name, AddedManually = true };
+            list.Add(e);
+        }
+        e.Path = exePath;
+        var (arch, managed) = PeArch.FromFile(exePath);
+        // An AnyCPU .NET exe is x86 in its header but runs as x64: leave it unknown until seen running.
+        if (!(managed && arch == Arch.X86) && arch != Arch.Unknown) e.Arch = arch;
+        Save(list);
+        return e;
+    }
+
+    public static void Forget(string exeName)
+    {
+        var list = Load();
+        if (list.RemoveAll(x => x.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase)) > 0) Save(list);
+    }
+}
+
+public sealed class Settings
+{
+    /// <summary>"auto", "ro" or "en".</summary>
+    public string Language { get; set; } = "auto";
+
+    public static Settings Load()
+    {
+        try
+        {
+            if (File.Exists(AppPaths.SettingsFile))
+                return JsonSerializer.Deserialize<Settings>(File.ReadAllText(AppPaths.SettingsFile)) ?? new Settings();
+        }
+        catch
+        {
+            // fall through
+        }
+        return new Settings();
+    }
+
+    public void Save()
+    {
+        AppPaths.EnsureDataDir();
+        File.WriteAllText(AppPaths.SettingsFile, JsonSerializer.Serialize(this));
+    }
+}
