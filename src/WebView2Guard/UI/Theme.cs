@@ -106,6 +106,7 @@ internal static class Theme
         public const string Document = "";
         public const string External = "";
         public const string Circle = "";
+        public const string Globe = "\uE774";
     }
 
     /// <summary>First opaque background colour up the parent chain (transparent panels report Transparent).</summary>

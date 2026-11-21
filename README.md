@@ -35,6 +35,10 @@ You can split one product: for example allow `AdskIdentityManager.exe` (license 
 **Updates:** App → Check for app updates (GitHub Releases, SHA-256 checked). Runtime tab → Check for update downloads
 the newest Fixed runtime straight from Microsoft; *Update automatically* lets the sync task do it once a day.
 
+**Allowed domains (per app):** select an allowed app → *Domains…* and list the host names it may reach
+(e.g. only the sign-in servers). Applied through the `AdditionalBrowserArguments` policy with
+`--host-resolver-rules`; every other name fails to resolve. Not effective when the app goes through a proxy.
+
 **Notification area:** App → *Run in the notification area and start with Windows* keeps the app in the tray
 (started elevated at logon by a scheduled task, no UAC prompt) and notifies you when an app uses WebView2 for the
 first time.

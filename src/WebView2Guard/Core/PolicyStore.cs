@@ -14,6 +14,7 @@ public static class PolicyStore
 {
     public const string PoliciesKey = @"SOFTWARE\Policies\Microsoft\Edge\WebView2";
     public const string FolderKey = PoliciesKey + @"\BrowserExecutableFolder";
+    public const string ArgsKey = PoliciesKey + @"\AdditionalBrowserArguments";
     private const int MaxBackups = 30;
 
     private static readonly Regex ExeNameRx =
@@ -23,11 +24,35 @@ public static class PolicyStore
 
     private static RegistryKey Hklm() => RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
 
-    public static Dictionary<string, string> ReadAll()
+    public static Dictionary<string, string> ReadAll() => ReadKey(FolderKey);
+
+    /// <summary>AdditionalBrowserArguments per exe (used for the domain restriction).</summary>
+    public static Dictionary<string, string> ReadArgs() => ReadKey(ArgsKey);
+
+    public static void SetArgs(string exeName, string args)
+    {
+        if (!IsValidExeName(exeName)) throw new ArgumentException("Invalid exe name: " + exeName);
+        Backup();
+        using var hklm = Hklm();
+        using var key = hklm.CreateSubKey(ArgsKey, writable: true);
+        key.SetValue(exeName, args, RegistryValueKind.String);
+    }
+
+    public static bool RemoveArgs(string exeName)
+    {
+        using var hklm = Hklm();
+        using var key = hklm.OpenSubKey(ArgsKey, writable: true);
+        if (key?.GetValue(exeName) == null) return false;
+        Backup();
+        key.DeleteValue(exeName, throwOnMissingValue: false);
+        return true;
+    }
+
+    private static Dictionary<string, string> ReadKey(string subKey)
     {
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using var hklm = Hklm();
-        using var key = hklm.OpenSubKey(FolderKey);
+        using var key = hklm.OpenSubKey(subKey);
         if (key == null) return d;
         foreach (var name in key.GetValueNames())
             if (key.GetValue(name) is string s)

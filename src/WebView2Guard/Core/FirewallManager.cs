@@ -71,10 +71,17 @@ public static class FirewallManager
                     "Allow", exe));
         }
         foreach (var e in RuntimeManager.Evergreen())
-            desired.Add(new Desired($"{Prefix}Block-{e.Version}", $"WebView2 Guard - Block Evergreen {e.Version}",
+        {
+            var user = e.User == null ? string.Empty : "-" + SafeName(e.User);
+            desired.Add(new Desired($"{Prefix}Block-{e.Version}{user}",
+                $"WebView2 Guard - Block Evergreen {e.Version}{(e.User == null ? string.Empty : " (" + e.User + ")")}",
                 "Block", e.ExePath));
+        }
         return desired;
     }
+
+    private static string SafeName(string s) =>
+        new(s.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray());
 
     private static bool Matches(FwRule r, Desired d) =>
         r.Enabled &&

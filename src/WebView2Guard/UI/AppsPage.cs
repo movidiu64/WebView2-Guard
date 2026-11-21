@@ -50,6 +50,7 @@ internal sealed class AppsPage : UserControl
         _list.Columns.Add(L.T("col.runtime"), S(190));
         _list.Columns.Add(L.T("col.arch"), S(60));
         _list.Columns.Add(L.T("col.lastSeen"), S(140));
+        _list.Columns.Add(L.T("col.domains"), S(170));
         _list.SelectedIndexChanged += (_, _) => UpdateSelection();
         _list.DoubleClick += (_, _) => { if (_allow.Enabled) _allow.PerformClick(); };
         var listCard = new Card { Padding = new Padding(1), Dock = DockStyle.Fill, Margin = P(0, 0, 12, 0) };
@@ -185,6 +186,7 @@ internal sealed class AppsPage : UserControl
         Set(item.SubItems[3], RuntimeText(r), r.NeedsRestart ? WarnText : muted ? TextMuted : Theme.Text, r.NeedsRestart ? Strong : Body);
         Set(item.SubItems[4], r.Arch == Arch.Unknown ? "—" : r.Arch.Label(), muted ? TextMuted : Theme.Text, Body);
         Set(item.SubItems[5], SeenText(r), muted ? TextMuted : Theme.Text, Body);
+        Set(item.SubItems[6], DomainsText(r), r.ExternalArgs != null ? ErrText : muted ? TextMuted : Theme.Text, Body);
 
         void Set(ListViewItem.ListViewSubItem sub, string text, Color fore, Font font)
         {
@@ -193,6 +195,13 @@ internal sealed class AppsPage : UserControl
             sub.BackColor = back;
             sub.Font = font;
         }
+    }
+
+    public static string DomainsText(HostRow r)
+    {
+        if (r.ExternalArgs != null) return L.T("domains.external");
+        if (r.Domains != null) return L.F("domains.count", r.Domains.Split(',').Length);
+        return r.Access == HostAccess.Allowed ? L.T("domains.all") : "—";
     }
 
     public static (string Text, Color Color) AccessLabel(HostAccess a) => a switch
@@ -259,6 +268,24 @@ internal sealed class AppsPage : UserControl
             if (!(managed && peArch == Arch.X86)) arch = peArch;
         }
         await _shell.RunAsync(() => Guard.Allow(r.ExeName, arch));
+    }
+
+    internal async Task EditDomains()
+    {
+        var r = Selected;
+        if (r == null || r.ExeName == "*") return;
+        if (r.ExternalArgs != null)
+        {
+            Ui.Error(_shell.Window, L.F("err.argsExternal", r.ExeName, r.ExternalArgs));
+            return;
+        }
+        var current = r.Domains?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                      ?? Array.Empty<string>();
+        using var dlg = new DomainsDialog(r.ExeName, current);
+        if (dlg.ShowDialog(_shell.Window) != DialogResult.OK) return;
+        var list = dlg.Domains;
+        var exe = r.ExeName;
+        await _shell.RunAsync(() => Guard.SetDomains(exe, list), status: L.T("status.domains"));
     }
 
     internal async Task BlockSelected()
@@ -356,6 +383,8 @@ internal sealed class AppsPage : UserControl
             AddField(L.T("details.runtime"), r.RuntimeInUse ?? "—", mono: true,
                 color: r.NeedsRestart ? WarnText : null);
             AddField(L.T("details.policy"), r.PolicyFolder ?? L.T("details.policyNone"), mono: r.PolicyFolder != null);
+            AddField(L.T("details.domains"), r.ExternalArgs ?? r.Domains ?? DomainsText(r),
+                mono: r.ExternalArgs != null || r.Domains != null, color: r.ExternalArgs != null ? ErrText : null);
 
             var buttons = Ui.Row();
             buttons.Margin = P(0, 4, 0, 8);
@@ -364,6 +393,12 @@ internal sealed class AppsPage : UserControl
                 var allow = new GuardButton(L.T("apps.allow"), Glyph.Check, ButtonKind.Primary);
                 allow.Click += async (_, _) => await _page.AllowSelected();
                 buttons.Controls.Add(allow);
+            }
+            if (r.Access == HostAccess.Allowed && r.ExeName != "*")
+            {
+                var domains = new GuardButton(L.T("details.editDomains"), Glyph.Globe);
+                domains.Click += async (_, _) => await _page.EditDomains();
+                buttons.Controls.Add(domains);
             }
             if (r.Access != HostAccess.Blocked)
             {

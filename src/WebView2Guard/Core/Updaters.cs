@@ -141,7 +141,16 @@ public static class AppUpdater
     /// <summary>Newest published release that has the asset for this build flavour.</summary>
     public static async Task<AppRelease?> LatestAsync(CancellationToken ct = default)
     {
-        var json = await Net.Client.GetStringAsync(Api, ct);
+        string json;
+        try
+        {
+            json = await Net.Client.GetStringAsync(Api, ct);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // GitHub answers 404 (not 403) for a private repository when the request has no token.
+            throw new InvalidOperationException(L.T("err.updateRepoNotFound"));
+        }
         var releases = JsonSerializer.Deserialize<List<ReleaseDto>>(json) ?? new List<ReleaseDto>();
         foreach (var r in releases.Where(r => !r.Draft))
         {

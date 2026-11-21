@@ -328,3 +328,55 @@ internal sealed class UndoDialog : GuardDialog
         return c;
     }
 }
+
+/// <summary>Edits the host names an allowed app may resolve (empty = no restriction).</summary>
+internal sealed class DomainsDialog : GuardDialog
+{
+    private readonly TextBox _text;
+
+    public IReadOnlyList<string> Domains { get; private set; } = Array.Empty<string>();
+
+    public DomainsDialog(string exeName, IReadOnlyList<string> current)
+        : base(L.F("domains.title", exeName), Glyph.Globe, Accent)
+    {
+        ClientSize = new Size(S(560), S(520));
+        BodyPanel.Controls.Add(Wrapped(L.T("domains.text"), Body, Color.FromArgb(0x33, 0x33, 0x33)));
+        _text = new TextBox
+        {
+            Multiline = true,
+            ScrollBars = ScrollBars.Vertical,
+            AcceptsReturn = true,
+            Font = Mono,
+            Width = S(510),
+            Height = S(150),
+            Margin = P(0, 0, 0, 10),
+            Text = string.Join(Environment.NewLine, current),
+            AccessibleName = L.T("domains.listName")
+        };
+        BodyPanel.Controls.Add(_text);
+        BodyPanel.Controls.Add(Wrapped(L.T("domains.hint"), Small, TextMuted));
+
+        var save = new GuardButton(L.T("domains.save"), Glyph.Check, ButtonKind.Primary);
+        var clear = new GuardButton(L.T("domains.clear"));
+        var cancel = new GuardButton(L.T("inst.cancel")) { DialogResult = DialogResult.Cancel };
+        save.Click += (_, _) => Accept(DomainRules.Normalize(_text.Text));
+        clear.Click += (_, _) => Accept(new List<string>());
+        Footer.Controls.Add(save);
+        Footer.Controls.Add(clear);
+        Footer.Controls.Add(cancel);
+        CancelButton = cancel;
+    }
+
+    private void Accept(List<string> list)
+    {
+        var bad = list.Where(d => !DomainRules.IsValid(d)).ToList();
+        if (bad.Count > 0)
+        {
+            Ui.Error(this, L.F("err.badDomains", string.Join(", ", bad)));
+            return;
+        }
+        Domains = list;
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+}

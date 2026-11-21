@@ -176,7 +176,8 @@ internal sealed class RuntimePage : UserControl
                 var blocked = IsBlocked(s, e);
                 var ver = Ui.Lbl(e.Version, Strong);
                 ver.Margin = P(0, 0, 10, 0);
-                var tag = Ui.Lbl(i == 0 ? L.T("rt.evergreen.current") : L.T("rt.evergreen.leftover"), Small, TextMuted);
+                var tag = Ui.Lbl(e.User != null ? L.F("rt.evergreen.user", e.User)
+                    : i == 0 ? L.T("rt.evergreen.current") : L.T("rt.evergreen.leftover"), Small, TextMuted);
                 tag.Margin = P(0, 1, 16, 0);
                 var state = Ui.Lbl((blocked ? "✓ " : "✕ ") +
                                    (blocked ? L.T("rt.evergreen.ruleOk") : L.T("rt.evergreen.ruleMissing")),

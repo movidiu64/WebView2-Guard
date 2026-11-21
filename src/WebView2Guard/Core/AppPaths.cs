@@ -56,13 +56,39 @@ public static class AppPaths
     public static string StartMenuShortcut => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "WebView2 Guard.lnk");
 
-    /// <summary>Folders that hold the Evergreen (system-wide) WebView2 runtime versions.</summary>
-    public static IEnumerable<string> EvergreenRoots =>
+    /// <summary>Folders that hold the system-wide Evergreen WebView2 runtime versions.</summary>
+    public static IEnumerable<string> MachineEvergreenRoots =>
         new[]
         {
             Path.Combine(ProgramFilesX86Dir, "Microsoft", "EdgeWebView", "Application"),
             Path.Combine(ProgramFilesDir, "Microsoft", "EdgeWebView", "Application")
         }.Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Per-user Evergreen installs (rare: installed without admin rights), as (user folder name, root) pairs.
+    /// </summary>
+    public static IEnumerable<(string User, string Root)> UserEvergreenRoots
+    {
+        get
+        {
+            var users = Path.GetDirectoryName(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            if (string.IsNullOrEmpty(users) || !Directory.Exists(users)) yield break;
+            string[] profiles;
+            try { profiles = Directory.GetDirectories(users); }
+            catch { yield break; }
+            foreach (var profile in profiles)
+            {
+                var root = Path.Combine(profile, "AppData", "Local", "Microsoft", "EdgeWebView", "Application");
+                bool exists;
+                try { exists = Directory.Exists(root); }
+                catch { exists = false; }
+                if (exists) yield return (Path.GetFileName(profile), root);
+            }
+        }
+    }
+
+    public static IEnumerable<string> EvergreenRoots =>
+        MachineEvergreenRoots.Concat(UserEvergreenRoots.Select(u => u.Root));
 
     public static string CurrentExe => Environment.ProcessPath ?? string.Empty;
 

@@ -29,7 +29,9 @@ public sealed record HostRow(
     RuntimeKind RuntimeKind,
     DateTime? LastSeen,
     bool NeedsRestart,
-    bool IsNew = false);
+    bool IsNew = false,
+    string? Domains = null,
+    string? ExternalArgs = null);
 
 public sealed record CollectStep(int Step, int Total, string Text);
 
@@ -62,6 +64,7 @@ public static class Guard
         if (newNames.Count > 0 && catalog.Count > newNames.Count) NewHostsDetected?.Invoke(newNames);
 
         var policies = PolicyStore.ReadAll();
+        var arguments = PolicyStore.ReadArgs();
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         // msedgewebview2.exe is the runtime itself, never a host (older versions could record it).
         foreach (var c in catalog.Where(c => !c.ExeName.Equals(AppPaths.WebViewExe, StringComparison.OrdinalIgnoreCase)))
@@ -77,6 +80,8 @@ public static class Guard
             var entry = catalog.FirstOrDefault(c => c.ExeName.Equals(name, StringComparison.OrdinalIgnoreCase));
             var live = running.Where(r => r.ExeName.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
             policies.TryGetValue(name, out var folder);
+            arguments.TryGetValue(name, out var args);
+            var domains = DomainRules.Parse(args);
 
             var access = folder == null ? HostAccess.Blocked
                 : PolicyStore.IsOurs(folder) ? HostAccess.Allowed
@@ -104,7 +109,9 @@ public static class Guard
                 kind,
                 entry?.LastSeen, // stable while running, so unchanged rows compare equal
                 needsRestart,
-                entry?.FirstSeen is { } fs && DateTime.Now - fs < TimeSpan.FromHours(24)));
+                entry?.FirstSeen is { } fs && DateTime.Now - fs < TimeSpan.FromHours(24),
+                domains == null ? null : string.Join(", ", domains),
+                args != null && domains == null ? args : null));
         }
         return rows;
     }
@@ -248,6 +255,29 @@ public static class Guard
         return a;
     }
 
+    /// <summary>Lets the exe resolve only these host names (empty list = no restriction).</summary>
+    public static void SetDomains(string exeName, IReadOnlyList<string> domains)
+    {
+        if (domains.Count == 0)
+        {
+            ClearDomains(exeName);
+            return;
+        }
+        var bad = domains.Where(d => !DomainRules.IsValid(d)).ToList();
+        if (bad.Count > 0) throw new InvalidOperationException(L.F("err.badDomains", string.Join(", ", bad)));
+        if (PolicyStore.ReadArgs().TryGetValue(exeName, out var existing) && !DomainRules.IsOurs(existing))
+            throw new InvalidOperationException(L.F("err.argsExternal", exeName, existing));
+        PolicyStore.SetArgs(exeName, DomainRules.Build(domains));
+        Log.Info(L.F("log.domainsSet", exeName, string.Join(", ", domains)));
+    }
+
+    public static void ClearDomains(string exeName)
+    {
+        if (PolicyStore.ReadArgs().TryGetValue(exeName, out var existing) && DomainRules.IsOurs(existing) &&
+            PolicyStore.RemoveArgs(exeName))
+            Log.Info(L.F("log.domainsCleared", exeName));
+    }
+
     /// <summary>Removes the policy value; the exe falls back to Evergreen (blocked).</summary>
     public static void Block(string exeName)
     {
@@ -266,8 +296,12 @@ public static class Guard
     public static void UndoAll(UndoOptions o)
     {
         if (o.Policies)
+        {
             foreach (var kv in PolicyStore.ReadAll().Where(p => PolicyStore.IsOurs(p.Value)))
                 Block(kv.Key);
+            foreach (var kv in PolicyStore.ReadArgs().Where(p => DomainRules.IsOurs(p.Value)))
+                ClearDomains(kv.Key);
+        }
         if (o.Firewall) FirewallManager.RemoveAll();
         if (o.Task)
         {

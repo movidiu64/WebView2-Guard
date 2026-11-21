@@ -7,7 +7,8 @@ using WebView2Guard.Localization;
 
 namespace WebView2Guard.Core;
 
-public sealed record EvergreenInstall(string Version, string ExePath);
+/// <param name="User">Profile folder name for a per-user install, null for the system-wide one.</param>
+public sealed record EvergreenInstall(string Version, string ExePath, string? User = null);
 
 /// <summary>Written next to an installed Fixed runtime.</summary>
 public sealed class RuntimeMarker
@@ -66,18 +67,23 @@ public static class RuntimeManager
     public static List<EvergreenInstall> Evergreen()
     {
         var list = new List<EvergreenInstall>();
-        foreach (var root in AppPaths.EvergreenRoots)
+        var roots = AppPaths.MachineEvergreenRoots.Select(r => (User: (string?)null, Root: r))
+            .Concat(AppPaths.UserEvergreenRoots.Select(u => (User: (string?)u.User, Root: u.Root)));
+        foreach (var (user, root) in roots)
         {
             if (!Directory.Exists(root)) continue;
-            foreach (var dir in Directory.GetDirectories(root))
+            string[] dirs;
+            try { dirs = Directory.GetDirectories(root); }
+            catch { continue; }
+            foreach (var dir in dirs)
             {
                 var name = Path.GetFileName(dir);
                 if (!VersionDir.IsMatch(name)) continue;
                 var exe = Path.Combine(dir, AppPaths.WebViewExe);
-                if (File.Exists(exe)) list.Add(new EvergreenInstall(name, exe));
+                if (File.Exists(exe)) list.Add(new EvergreenInstall(name, exe, user));
             }
         }
-        return list.OrderByDescending(e => ParseVersion(e.Version)).ToList();
+        return list.OrderBy(e => e.User != null).ThenByDescending(e => ParseVersion(e.Version)).ToList();
     }
 
     public static Version ParseVersion(string? v) =>
