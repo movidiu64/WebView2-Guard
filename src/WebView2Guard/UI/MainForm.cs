@@ -184,8 +184,6 @@ internal sealed class MainForm : Form, IShell
             }
         }
         await RefreshAsync();
-        // All pages were laid out at the real size once (no first-view lag); from now on only the shown one follows resizes.
-        SwitchPage(_tabs.Selected);
         _hostsTimer.Start();
         StartEvergreenWatcher();
         _updateTimer.Tick += async (_, _) => await NotifyAppUpdateAsync();
@@ -355,6 +353,12 @@ internal sealed class MainForm : Form, IShell
         if (_sizing) return;
         _sizing = true;
         _content.SuspendLayout();
+        // The pages behind still get their new size, but lay out their content only after the drag.
+        foreach (var p in _pages)
+        {
+            if (p == _pages[_tabs.Selected] || !_deferred.Add(p)) continue;
+            p.SuspendLayout();
+        }
         _resizeTimer.Start();
     }
 
@@ -365,6 +369,18 @@ internal sealed class MainForm : Form, IShell
         _sizing = false;
         _resizeTimer.Stop();
         _content.ResumeLayout(true);
+        // Catch up the pages behind one per message-loop turn, so the window stays responsive; all are ready
+        // again before the user can reach another tab (switching to one first catches it up at once).
+        foreach (var p in _deferred.ToList())
+            BeginInvoke(new Action(() => ResumeDeferred(p)));
+    }
+
+    private readonly HashSet<Control> _deferred = new();
+
+    private void ResumeDeferred(Control page)
+    {
+        if (!_deferred.Remove(page)) return;
+        page.ResumeLayout(true);
     }
 
     private Size _flushedSize;
@@ -629,23 +645,11 @@ internal sealed class MainForm : Form, IShell
     private void SwitchPage(int index)
     {
         var page = _pages[index];
-        _content.SuspendLayout();
-        page.Dock = DockStyle.Fill; // lays it out at the current size if the window changed while it was behind
+        ResumeDeferred(page); // resized behind during a drag and not caught up yet: do it now
         page.Enabled = true;
         page.BringToFront();
         for (var i = 0; i < _pages.Length; i++)
-        {
-            if (i == index) continue;
-            _pages[i].Enabled = false; // keeps Tab focus out of the pages behind
-            // Pages behind keep their size and are not laid out again on every resize; the one shown is.
-            if (_pages[i].Dock != DockStyle.None)
-            {
-                var b = _pages[i].Bounds;
-                _pages[i].Dock = DockStyle.None;
-                _pages[i].Bounds = b;
-            }
-        }
-        _content.ResumeLayout(true);
+            if (i != index) _pages[i].Enabled = false; // keeps Tab focus out of the pages behind
         if (index == 3 && !_log.Loaded) _log.Reload();
     }
 
