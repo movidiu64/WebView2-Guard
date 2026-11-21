@@ -78,9 +78,13 @@ jobs:
           Get-Content out/SHA256SUMS.txt
           Get-ChildItem out | Format-Table Name, Length
 
+      - name: WebView2 probe (test helper)
+        run: dotnet publish tests/WebView2Probe/WebView2Probe.csproj -c Release -r win-x64 --self-contained false -o probe
+
       # The real thing on the runner, through the command line: install, firewall rules, the Fixed
       # runtime from Microsoft (signature, permissions), policies, domains, export/import, the window,
-      # uninstall. The runner is a throwaway VM with administrator rights.
+      # a real WebView2 app blocked and allowed, uninstall. The runner is a throwaway VM with
+      # administrator rights.
       - name: End-to-end test
         timeout-minutes: 15
         run: |
@@ -159,7 +163,38 @@ jobs:
           Write-Host "window: '$($ui.MainWindowTitle)' open"
           Stop-Process -Id $ui.Id -Force
 
-          # 7. Sync, then uninstall: nothing of ours is left.
+          # 7. A real WebView2 app (tests/WebView2Probe): offline on Evergreen, online on the allowed
+          #    runtime once allowed, and only the allowed domains resolve.
+          Get-NetFirewallProfile | Format-Table Name, Enabled, DefaultOutboundAction | Out-String | Write-Host
+          Set-NetFirewallProfile -All -Enabled True
+          $probe = (Resolve-Path probe/WebView2Probe.exe).Path
+          $fixed = "$dir\Runtime\x64"
+          function Probe($url) {
+            $out = Join-Path $env:RUNNER_TEMP "probe-$([guid]::NewGuid()).json"
+            $p = Start-Process $probe -ArgumentList "$url `"$out`" 60" -PassThru
+            if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "probe: no answer for $url" }
+            if (-not (Test-Path $out)) { throw "probe: no result for $url (exit $($p.ExitCode))" }
+            $r = Get-Content $out -Raw | ConvertFrom-Json
+            Write-Host "probe $url -> success=$($r.success) status=$($r.status) browser=$($r.browserPath) $($r.browserVersion)"
+            return $r
+          }
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -like "$fixed*") { throw 'a blocked app ran on the allowed runtime' }
+          if ($r.success) { throw 'a blocked app reached the internet' }
+          Guard '--allow WebView2Probe.exe' | Out-Null
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$fixed*") { throw "the allowed app ran on $($r.browserPath)" }
+          if (-not $r.success) { throw "the allowed app could not load the page: $($r.status) $($r.error)" }
+          Guard '--domains WebView2Probe.exe example.org' | Out-Null
+          $r = Probe 'https://example.com/'
+          if ($r.success) { throw 'domain limit: example.com loaded' }
+          $r = Probe 'https://example.org/'
+          if (-not $r.success) { throw "domain limit: example.org did not load: $($r.status)" }
+          Guard '--block WebView2Probe.exe' | Out-Null
+          $r = Probe 'https://example.com/'
+          if ($r.success -or $r.browserPath -like "$fixed*") { throw 'blocking again did not take effect' }
+
+          # 8. Sync, then uninstall: nothing of ours is left.
           Guard '--sync' | Out-Null
           Guard '--uninstall' | Out-Null
           if (Value BrowserExecutableFolder testhost.exe) { throw 'uninstall: policy left' }
@@ -171,7 +206,7 @@ jobs:
             Get-Content "$env:ProgramData\WebView2Guard\guard.log" | Write-Host
             Write-Warning 'guard.log has errors (expected ones come from the negative tests)'
           }
-          Write-Host 'install, runtime, allow, domains, export/import, window, uninstall: ok'
+          Write-Host 'install, runtime, allow, domains, export/import, window, WebView2 app, uninstall: ok'
 
       # Artifacts count against the account's shared storage: keep them briefly. Releases stay.
       - uses: actions/upload-artifact@v5
