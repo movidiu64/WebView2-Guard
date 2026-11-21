@@ -25,11 +25,24 @@ internal static class Program
         if (args.Any(a => a.Equals("--sync", StringComparison.OrdinalIgnoreCase)))
             return RunSync();
 
+        const string showEventName = @"Global\WebView2Guard.Show";
+        var restarted = args.Any(a => a.Equals("--restarted", StringComparison.OrdinalIgnoreCase));
+        var startInTray = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+
         using var single = new Mutex(true, @"Global\WebView2Guard.UI", out var first);
+        if (!first && !restarted)
+        {
+            // Already running (maybe hidden in the tray): ask it to show its window and leave.
+            if (EventWaitHandle.TryOpenExisting(showEventName, out var show))
+            {
+                using (show) show.Set();
+                return 0;
+            }
+        }
         if (!first)
         {
-            // A previous instance may be closing (e.g. restart from Program Files): wait briefly.
-            try { first = single.WaitOne(TimeSpan.FromSeconds(5)); }
+            // The previous instance is closing (update / install restart): wait for it.
+            try { first = single.WaitOne(TimeSpan.FromSeconds(10)); }
             catch (AbandonedMutexException) { first = true; }
         }
         if (!first)
@@ -38,15 +51,22 @@ internal static class Program
             return 0;
         }
 
+        using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, showEventName);
+        ShowSignal = showEvent;
+
         AppUpdater.CleanupOld();
         ApplicationConfiguration.Initialize();
         do
         {
             RestartUi = false;
-            Application.Run(new MainForm());
+            Application.Run(new MainForm(startInTray));
+            startInTray = false;
         } while (RestartUi);
         return 0;
     }
+
+    /// <summary>Signalled by a second launch: the running instance shows its window.</summary>
+    public static EventWaitHandle? ShowSignal { get; private set; }
 
     /// <summary>Headless mode used by the scheduled task.</summary>
     private static int RunSync()

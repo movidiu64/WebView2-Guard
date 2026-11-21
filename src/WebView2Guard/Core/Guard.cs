@@ -28,7 +28,8 @@ public sealed record HostRow(
     string? RuntimeInUse,
     RuntimeKind RuntimeKind,
     DateTime? LastSeen,
-    bool NeedsRestart);
+    bool NeedsRestart,
+    bool IsNew = false);
 
 public sealed record CollectStep(int Step, int Total, string Text);
 
@@ -49,11 +50,16 @@ public static class Guard
 {
     // ---- state ---------------------------------------------------------------------------------
 
+    /// <summary>Raised (on a background thread) with apps seen using WebView2 for the first time.</summary>
+    public static event Action<IReadOnlyList<string>>? NewHostsDetected;
+
     public static List<HostRow> CollectHosts()
     {
         var running = ProcessScanner.FindHosts();
         var (catalog, newNames) = HostCatalog.MergeSeen(running);
         foreach (var n in newNames) Log.Info(L.F("log.newHost", n));
+        // On the very first scan everything is "new": no notification flood.
+        if (newNames.Count > 0 && catalog.Count > newNames.Count) NewHostsDetected?.Invoke(newNames);
 
         var policies = PolicyStore.ReadAll();
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -93,7 +99,8 @@ public static class Guard
                 runtimePath,
                 kind,
                 entry?.LastSeen, // stable while running, so unchanged rows compare equal
-                needsRestart));
+                needsRestart,
+                entry?.FirstSeen is { } fs && DateTime.Now - fs < TimeSpan.FromHours(24)));
         }
         return rows;
     }
@@ -258,7 +265,14 @@ public static class Guard
             foreach (var kv in PolicyStore.ReadAll().Where(p => PolicyStore.IsOurs(p.Value)))
                 Block(kv.Key);
         if (o.Firewall) FirewallManager.RemoveAll();
-        if (o.Task) SyncTask.Delete();
+        if (o.Task)
+        {
+            SyncTask.Delete();
+            TrayTask.Delete();
+            var settings = Settings.Load();
+            settings.TrayMode = false;
+            settings.Save();
+        }
         if (o.Runtimes)
             foreach (var a in AppPaths.RuntimeArchs)
                 RuntimeManager.Remove(a);

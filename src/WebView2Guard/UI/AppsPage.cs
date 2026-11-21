@@ -95,6 +95,25 @@ internal sealed class AppsPage : UserControl
         UpdateSelection();
     }
 
+    /// <summary>Selects an app by exe name (e.g. from a tray notification), clearing filters that hide it.</summary>
+    public void SelectApp(string exeName)
+    {
+        if (!_rows.Any(r => r.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase))) return;
+        _onlyRunning.Checked = false;
+        _search.Text = string.Empty;
+        foreach (ListViewItem item in _list.Items)
+        {
+            if (item.Tag is HostRow r && r.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase))
+            {
+                item.Selected = true;
+                item.Focused = true;
+                item.EnsureVisible();
+                _list.Focus();
+                break;
+            }
+        }
+    }
+
     public HostRow? Selected => _list.SelectedItems.Count > 0 ? _list.SelectedItems[0].Tag as HostRow : null;
 
     public void Bind(GuardSnapshot s)
@@ -152,14 +171,15 @@ internal sealed class AppsPage : UserControl
     private static void Populate(ListViewItem item, HostRow r)
     {
         item.Tag = r;
-        item.Text = r.ExeName == "*" ? L.T("apps.globalName") : r.ExeName;
+        item.Text = (r.ExeName == "*" ? L.T("apps.globalName") : r.ExeName) +
+                    (r.IsNew ? "   ● " + L.T("apps.new") : string.Empty);
         item.ToolTipText = r.Path ?? r.PolicyFolder ?? string.Empty;
 
         var back = r.Access == HostAccess.External ? ErrBg : r.NeedsRestart ? WarnRow : Surface;
         var muted = !r.Running && r.Access != HostAccess.External;
         var (accessText, accessColor) = AccessLabel(r.Access);
 
-        Set(item.SubItems[0], item.Text, Theme.Text, Strong);
+        Set(item.SubItems[0], item.Text, r.IsNew ? Accent : Theme.Text, Strong);
         Set(item.SubItems[1], accessText, accessColor, Strong);
         Set(item.SubItems[2], r.Running ? L.F("running.yes", r.Pid) : L.T("running.no"), muted ? TextMuted : Theme.Text, Body);
         Set(item.SubItems[3], RuntimeText(r), r.NeedsRestart ? WarnText : muted ? TextMuted : Theme.Text, r.NeedsRestart ? Strong : Body);

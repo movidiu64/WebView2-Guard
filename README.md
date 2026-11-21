@@ -32,6 +32,13 @@ You can split one product: for example allow `AdskIdentityManager.exe` (license 
 4. **Applications:** start the programs you care about; they appear in the list. Select one → **Allow internet**,
    then restart that program.
 
+**Updates:** App → Check for app updates (GitHub Releases, SHA-256 checked). Runtime tab → Check for update downloads
+the newest Fixed runtime straight from Microsoft; *Update automatically* lets the sync task do it once a day.
+
+**Notification area:** App → *Run in the notification area and start with Windows* keeps the app in the tray
+(started elevated at logon by a scheduled task, no UAC prompt) and notifies you when an app uses WebView2 for the
+first time.
+
 **Uninstall:** App → Uninstall everything… removes the policies, rules, task and (optionally) the runtimes.
 A `.reg` backup of the policy key is written to `C:\ProgramData\WebView2Guard\backups` before every change.
 

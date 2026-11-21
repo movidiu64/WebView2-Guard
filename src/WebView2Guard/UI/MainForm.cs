@@ -50,9 +50,18 @@ internal sealed class MainForm : Form, IShell
         Visible = false
     };
     private DateTime? _lastUpdate;
+    private NotifyIcon? _tray;
+    private ToolStripMenuItem? _trayItem;
+    private ToolStripMenuItem? _notifyItem;
+    private RegisteredWaitHandle? _showWait;
+    private bool _startHidden;
+    private bool _started;
+    private bool _exiting;
+    private bool _trayHintShown;
 
-    public MainForm()
+    public MainForm(bool startHidden = false)
     {
+        _startHidden = startHidden;
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.None;
         Text = "WebView2 Guard";
@@ -103,12 +112,47 @@ internal sealed class MainForm : Form, IShell
         Controls.Add(BuildHeader());
 
         _hostsTimer.Tick += async (_, _) => await RefreshHostsAsync();
+        Guard.NewHostsDetected += OnNewHostsDetected;
+        if (startHidden || Settings.Load().TrayMode) CreateTray();
         ResumeLayout(true);
+    }
+
+    // ---- start-up, tray, single instance -----------------------------------------------------
+
+    /// <summary>Started with --tray: create the window but keep it hidden until the tray icon is used.</summary>
+    protected override void SetVisibleCore(bool value)
+    {
+        if (_startHidden && !IsHandleCreated)
+        {
+            _startHidden = false;
+            CreateHandle();
+            base.SetVisibleCore(false);
+            BeginInvoke(new Action(() => _ = EnsureStartedAsync()));
+            return;
+        }
+        base.SetVisibleCore(value);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        if (_showWait == null && Program.ShowSignal != null)
+            _showWait = ThreadPool.RegisterWaitForSingleObject(Program.ShowSignal, (_, _) =>
+            {
+                try { BeginInvoke(new Action(ShowFromTray)); } catch { /* closing */ }
+            }, null, -1, false);
     }
 
     protected override async void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        await EnsureStartedAsync();
+    }
+
+    private async Task EnsureStartedAsync()
+    {
+        if (_started) return;
+        _started = true;
         // Show the last known state at once; the real scan replaces it a moment later.
         var (cached, savedAt) = SnapshotCache.Load();
         if (cached != null)
@@ -125,6 +169,116 @@ internal sealed class MainForm : Form, IShell
         }
         await RefreshAsync();
         _hostsTimer.Start();
+    }
+
+    private void CreateTray()
+    {
+        if (_tray != null) return;
+        var menu = new ContextMenuStrip { Font = Body };
+        menu.Items.Add(L.T("tray.open"), null, (_, _) => ShowFromTray());
+        menu.Items.Add(L.T("fw.sync"), null, (_, _) => { ShowFromTray(); _ = SyncAsync(); });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(L.T("tray.exit"), null, (_, _) => ExitApp());
+        _tray = new NotifyIcon
+        {
+            Icon = Icon ?? SystemIcons.Application,
+            Text = "WebView2 Guard",
+            ContextMenuStrip = menu,
+            Visible = true
+        };
+        _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowFromTray(); };
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            ShowFromTray();
+            ShowTab(0);
+            if (_tray?.Tag is string exe) _apps.SelectApp(exe);
+        };
+    }
+
+    private void DisposeTray()
+    {
+        if (_tray == null) return;
+        _tray.Visible = false;
+        _tray.ContextMenuStrip?.Dispose();
+        _tray.Dispose();
+        _tray = null;
+    }
+
+    private void ShowFromTray()
+    {
+        if (!Visible) Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Activate();
+        _ = EnsureStartedAsync();
+    }
+
+    /// <summary>Really quits (tray "Exit", language change, restarts).</summary>
+    private void ExitApp()
+    {
+        _exiting = true;
+        Close();
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (_tray != null && !_exiting && e.CloseReason == CloseReason.UserClosing)
+        {
+            // Closing the window keeps the app in the notification area.
+            e.Cancel = true;
+            Hide();
+            if (!_trayHintShown)
+            {
+                _trayHintShown = true;
+                _tray.Tag = null;
+                _tray.ShowBalloonTip(4000, "WebView2 Guard", L.T("tray.stillRunning"), ToolTipIcon.Info);
+            }
+            return;
+        }
+        base.OnFormClosing(e);
+    }
+
+    private void OnNewHostsDetected(IReadOnlyList<string> names)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            BeginInvoke(new Action(() =>
+            {
+                if (_tray == null || !Settings.Load().NotifyNewApps) return;
+                if (Visible && WindowState != FormWindowState.Minimized) return; // the list shows them already
+                _tray.Tag = names[0];
+                _tray.ShowBalloonTip(8000, L.T("tray.newAppTitle"),
+                    L.F("tray.newAppText", string.Join(", ", names)), ToolTipIcon.Warning);
+            }));
+        }
+        catch (InvalidOperationException)
+        {
+            // closing
+        }
+    }
+
+    private async Task ToggleTrayAsync()
+    {
+        var enable = _tray == null || !Settings.Load().TrayMode;
+        if (enable && !File.Exists(AppPaths.InstalledExe))
+        {
+            Ui.Error(this, L.T("err.trayNeedsInstall"));
+            return;
+        }
+        var ok = false;
+        await RunAsync(() =>
+        {
+            if (enable) TrayTask.Create();
+            else TrayTask.Delete();
+            var st = Settings.Load();
+            st.TrayMode = enable;
+            st.Save();
+            ok = true;
+        }, refresh: false, status: L.T(enable ? "status.trayOn" : "status.trayOff"));
+        if (!ok) return;
+        if (enable) CreateTray();
+        else DisposeTray();
+        if (_trayItem != null) _trayItem.Checked = enable;
     }
 
     private Control BuildStatusBar()
@@ -176,6 +330,9 @@ internal sealed class MainForm : Form, IShell
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        Guard.NewHostsDetected -= OnNewHostsDetected;
+        _showWait?.Unregister(null);
+        DisposeTray();
         _hostsTimer.Stop();
         _hostsTimer.Dispose();
         base.OnFormClosed(e);
@@ -242,6 +399,20 @@ internal sealed class MainForm : Form, IShell
         _menu.Items.Add(L.T("menu.dataFolder"), null, (_, _) => OpenFolder(AppPaths.DataDir));
         _menu.Items.Add(L.T("menu.checkUpdates"), null, (_, _) => _ = CheckAppUpdateAsync());
         _menu.Items.Add(new ToolStripSeparator());
+        var settings = Settings.Load();
+        _trayItem = new ToolStripMenuItem(L.T("menu.tray")) { Checked = settings.TrayMode };
+        _trayItem.Click += (_, _) => _ = ToggleTrayAsync();
+        _menu.Items.Add(_trayItem);
+        _notifyItem = new ToolStripMenuItem(L.T("menu.notify")) { Checked = settings.NotifyNewApps };
+        _notifyItem.Click += (_, _) =>
+        {
+            var st = Settings.Load();
+            st.NotifyNewApps = !st.NotifyNewApps;
+            st.Save();
+            _notifyItem.Checked = st.NotifyNewApps;
+        };
+        _menu.Items.Add(_notifyItem);
+        _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(L.T("menu.undo"), null, (_, _) => _ = UndoAsync());
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(L.T("menu.about"), null, (_, _) => ShowAbout());
@@ -254,7 +425,7 @@ internal sealed class MainForm : Form, IShell
         s.Save();
         L.Init(code);
         Program.RestartUi = true;
-        Close();
+        ExitApp();
     }
 
     private void ShowAbout()
@@ -330,7 +501,9 @@ internal sealed class MainForm : Form, IShell
 
     private async Task RefreshHostsAsync()
     {
-        if (_busy || _refreshing || Current == null || !_apps.Visible || WindowState == FormWindowState.Minimized) return;
+        // In the tray the scan keeps running (hidden) so new apps can be announced.
+        var hidden = !Visible || WindowState == FormWindowState.Minimized;
+        if (_busy || _refreshing || Current == null || (hidden && _tray == null) || (!hidden && !_apps.Visible)) return;
         try
         {
             var hosts = await Task.Run(Guard.CollectHosts);
@@ -445,8 +618,8 @@ internal sealed class MainForm : Form, IShell
         {
             try
             {
-                Process.Start(new ProcessStartInfo(AppPaths.InstalledExe) { UseShellExecute = true });
-                Close();
+                Process.Start(new ProcessStartInfo(AppPaths.InstalledExe, "--restarted") { UseShellExecute = true });
+                ExitApp();
             }
             catch (Exception ex)
             {
@@ -500,8 +673,8 @@ internal sealed class MainForm : Form, IShell
 
         try
         {
-            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
-            Close();
+            Process.Start(new ProcessStartInfo(exe, "--restarted") { UseShellExecute = true });
+            ExitApp();
         }
         catch (Exception ex)
         {

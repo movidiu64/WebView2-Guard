@@ -11,6 +11,7 @@ public sealed class HostEntry
     public string? Path { get; set; }
     public Arch Arch { get; set; }
     public DateTime? LastSeen { get; set; }
+    public DateTime? FirstSeen { get; set; }
     public bool AddedManually { get; set; }
 }
 
@@ -64,7 +65,7 @@ public static class HostCatalog
             var e = list.FirstOrDefault(x => x.ExeName.Equals(h.ExeName, StringComparison.OrdinalIgnoreCase));
             if (e == null)
             {
-                e = new HostEntry { ExeName = h.ExeName };
+                e = new HostEntry { ExeName = h.ExeName, FirstSeen = DateTime.Now };
                 list.Add(e);
                 added.Add(h.ExeName);
                 changed = true;
@@ -111,6 +112,12 @@ public sealed class Settings
 {
     /// <summary>"auto", "ro" or "en".</summary>
     public string Language { get; set; } = "auto";
+
+    /// <summary>Keep running in the notification area and start at logon.</summary>
+    public bool TrayMode { get; set; }
+
+    /// <summary>Show a notification when an app uses WebView2 for the first time.</summary>
+    public bool NotifyNewApps { get; set; } = true;
 
     /// <summary>Let the sync task install newer Fixed runtimes from Microsoft (checked at most once a day).</summary>
     public bool AutoUpdateRuntime { get; set; }

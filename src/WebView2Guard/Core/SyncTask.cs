@@ -90,3 +90,40 @@ public static class SyncTask
         PowerShell.Run("Start-ScheduledTask " + Target);
     }
 }
+
+/// <summary>
+/// Task \WebView2Guard\Tray: starts "WebView2Guard.exe --tray" at logon of the current user, elevated (RunLevel
+/// Highest) so no UAC prompt appears — a Run-key entry would ask for elevation at every logon.
+/// </summary>
+public static class TrayTask
+{
+    private const string Target = "-TaskPath '\\WebView2Guard\\' -TaskName 'Tray'";
+
+    public static bool Exists()
+    {
+        var output = PowerShell.Run("if(Get-ScheduledTask " + Target + " -ErrorAction SilentlyContinue){'1'}else{'0'}");
+        return output.Trim() == "1";
+    }
+
+    public static void Create()
+    {
+        var exe = AppPaths.InstalledExe;
+        if (!File.Exists(exe)) throw new InvalidOperationException(L.T("err.notInstalled"));
+        var script =
+            "$u=\"$env:USERDOMAIN\\$env:USERNAME\";" +
+            "$a=New-ScheduledTaskAction -Execute " + PowerShell.Q(exe) + " -Argument '--tray';" +
+            "$t=New-ScheduledTaskTrigger -AtLogOn -User $u;" +
+            "$p=New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive -RunLevel Highest;" +
+            "$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries " +
+            "-ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew;" +
+            "Register-ScheduledTask " + Target + " -Action $a -Trigger $t -Principal $p -Settings $s " +
+            "-Description " + PowerShell.Q("WebView2 Guard: notification-area icon at logon.") + " -Force | Out-Null";
+        PowerShell.Run(script);
+        Log.Info(L.T("log.trayTaskCreated"));
+    }
+
+    public static void Delete()
+    {
+        PowerShell.Run("Unregister-ScheduledTask " + Target + " -Confirm:$false -ErrorAction SilentlyContinue");
+    }
+}

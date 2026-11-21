@@ -281,7 +281,7 @@ public static class L
         ["undo.legend"] = ("Ce se elimină", "What gets removed"),
         ["undo.policies"] = ("Politicile din registry create de aplicație ({0} aplicații)", "Registry policies created by this app ({0} applications)"),
         ["undo.rules"] = ("Regulile din grupul „WebView2 Guard” ({0} reguli)", "Rules in the “WebView2 Guard” group ({0} rules)"),
-        ["undo.task"] = ("Task-ul de sync automat și scurtătura din Start", "The auto sync task and the Start menu shortcut"),
+        ["undo.task"] = ("Task-urile programate (sync și pornire în zona de notificare) și scurtătura din Start", "The scheduled tasks (sync and notification-area start) and the Start menu shortcut"),
         ["undo.runtimes"] = ("Runtime-urile Fixed din Program Files\\WebView2Guard\\Runtime", "The Fixed runtimes in Program Files\\WebView2Guard\\Runtime"),
         ["undo.note"] = ("Înainte de ștergere se salvează un backup al cheii de registry în ProgramData\\WebView2Guard\\backups. Politicile puse de alte programe nu sunt atinse.",
             "A backup of the registry key is saved to ProgramData\\WebView2Guard\\backups first. Policies set by other programs are not touched."),
@@ -303,6 +303,23 @@ public static class L
         ["err.badExeName"] = ("Nume de exe invalid: {0}", "Invalid exe name: {0}"),
         ["err.runtimeMissingForAllow"] = ("Runtime-ul permis {0} nu e instalat. Instalează-l din tab-ul Runtime, apoi încearcă din nou.",
             "The allowed {0} runtime is not installed. Install it from the Runtime tab, then try again."),
+
+        // ---- tray ----
+        ["menu.tray"] = ("Rulează în zona de notificare și pornește cu Windows", "Run in the notification area and start with Windows"),
+        ["menu.notify"] = ("Notifică aplicațiile noi care folosesc WebView2", "Notify about new apps that use WebView2"),
+        ["tray.open"] = ("Deschide WebView2 Guard", "Open WebView2 Guard"),
+        ["tray.exit"] = ("Ieșire", "Exit"),
+        ["tray.stillRunning"] = ("WebView2 Guard rulează în continuare în zona de notificare. Ieșire: click dreapta pe iconiță.",
+            "WebView2 Guard keeps running in the notification area. To exit, right-click the icon."),
+        ["tray.newAppTitle"] = ("Aplicație nouă folosește WebView2", "New app uses WebView2"),
+        ["tray.newAppText"] = ("{0} · accesul la internet e blocat. Click aici ca s-o vezi și, dacă vrei, s-o permiți.",
+            "{0} · internet access is blocked. Click here to see it and allow it if you want."),
+        ["err.trayNeedsInstall"] = ("Instalează întâi aplicația în Program Files (meniul Aplicație). Pornirea cu Windows folosește copia de acolo.",
+            "Install the app to Program Files first (App menu). Starting with Windows uses that copy."),
+        ["status.trayOn"] = ("Se activează pornirea în zona de notificare…", "Enabling start in the notification area…"),
+        ["status.trayOff"] = ("Se dezactivează pornirea în zona de notificare…", "Disabling start in the notification area…"),
+        ["log.trayTaskCreated"] = ("Task-ul de pornire în zona de notificare a fost creat", "Notification-area startup task created"),
+        ["apps.new"] = ("nou", "new"),
 
         // ---- status bar ----
         ["status.scanApps"] = ("Se caută aplicațiile care folosesc WebView2…", "Looking for applications that use WebView2…"),
