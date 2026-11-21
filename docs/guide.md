@@ -33,7 +33,7 @@ WebView2 Guard turns this around:
 
 `BrowserExecutableFolder` is Microsoft's documented policy for pointing an app at a Fixed Version runtime. Windows Firewall applies block rules before allow rules, so the two kinds of rule never conflict: they cover different files.
 
-A scheduled task (`\WebView2Guard\Sync`, running as SYSTEM at startup and every hour) adds a block rule for each new Evergreen version and removes the rules of versions that are gone. Protection therefore does not depend on the window being open.
+A scheduled task (`\WebView2Guard\Sync`, running as SYSTEM at startup and every hour) adds a block rule for each new Evergreen version and removes the rules of versions that are gone. Protection therefore does not depend on the window being open. While WebView2 Guard runs (window or notification area), it also watches the Evergreen folders and syncs within about ten seconds of a new version appearing.
 
 ## Installing
 
@@ -110,6 +110,8 @@ Everything the app and the sync task did: policies, rules, runtime installs, new
 
 With **Notify about new apps that use WebView2** on, a notification appears the first time an app uses WebView2; clicking it opens the app with that entry selected.
 
+With **Notify about new versions of WebView2 Guard** on (the default), the app checks this repository's releases once a day and shows a notification when a newer version is out; clicking it starts the update. When Windows installs a new Evergreen version, a notification confirms that it was blocked.
+
 The sync task protects the system whether or not the notification-area mode is on.
 
 ## Updating WebView2 Guard
@@ -138,7 +140,7 @@ All apps then use the Evergreen runtime again, unblocked. Afterwards you can del
 | `C:\Program Files\WebView2Guard\WebView2Guard.exe` | the installed app (run by the scheduled tasks) |
 | `C:\Program Files\WebView2Guard\Runtime\x64`, `x86` | the allowed Fixed runtimes; `*.prev` the kept previous versions |
 | `C:\ProgramData\WebView2Guard\hosts.json` | the apps seen and when |
-| `C:\ProgramData\WebView2Guard\settings.json` | language, notification-area mode, notifications, automatic runtime update |
+| `C:\ProgramData\WebView2Guard\settings.json` | language, notification-area mode, notifications, automatic runtime update, update notices |
 | `C:\ProgramData\WebView2Guard\cache.json` | the last state shown, so the window opens at once |
 | `C:\ProgramData\WebView2Guard\guard.log` | the log |
 | `C:\ProgramData\WebView2Guard\backups\*.reg` | a backup of the policy key before every change |
@@ -180,7 +182,7 @@ Exit codes: 0 done, 1 failed (the reason is printed and written to the log), 2 w
 - The policy works by exe name: two different programs with the same exe name share the decision.
 - An app that runs before you allow it keeps the Evergreen runtime until it is restarted.
 - Sign-in through the Windows account manager (WAM) does not use WebView2, so it is not affected either way.
-- A brand-new Evergreen version is not blocked until the next sync (at most an hour, or at the next startup), unless your firewall blocks unknown programs anyway.
+- When WebView2 Guard is not running, a brand-new Evergreen version is not blocked until the next sync (at most an hour, or at the next startup), unless your firewall blocks unknown programs anyway. The notification-area mode closes that gap: the folders are watched and the rule is added within seconds.
 - Allowed domains need the app to resolve names itself; they do not apply through a proxy.
 - WebView2 Guard controls WebView2 only. The apps' own exes, their updaters and other helper processes are a matter for your firewall.
 
@@ -200,6 +202,7 @@ One C# project (`src/WebView2Guard`, .NET 10, Windows Forms), a unit test projec
 | `Core/Updaters.cs` | runtime downloads from Microsoft, app updates from GitHub Releases |
 | `Core/DomainRules.cs` | the `--host-resolver-rules` argument for allowed domains |
 | `Core/ConfigTransfer.cs` | export and import of the configuration |
+| `Core/EvergreenWatcher.cs` | watches the Evergreen folders while the app runs |
 | `Cli.cs` | the command line |
 | `UI/` | the window, tabs, dialogs and theme |
 | `Localization/Strings.cs` | every text, Romanian and English |

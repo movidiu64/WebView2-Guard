@@ -34,6 +34,10 @@ internal sealed class MainForm : Form, IShell
     private readonly LogPage _log;
     private readonly Control[] _pages;
     private readonly System.Windows.Forms.Timer _hostsTimer = new() { Interval = 10_000 };
+    private readonly System.Windows.Forms.Timer _updateTimer = new() { Interval = 60 * 60_000 };
+    private EvergreenWatcher? _evergreenWatcher;
+    private bool _evergreenSyncPending;
+    private const string UpdateBalloon = "\u0001update";
     private bool _busy;
     private bool _refreshing;
 
@@ -53,6 +57,7 @@ internal sealed class MainForm : Form, IShell
     private NotifyIcon? _tray;
     private ToolStripMenuItem? _trayItem;
     private ToolStripMenuItem? _notifyItem;
+    private ToolStripMenuItem? _notifyUpdatesItem;
     private RegisteredWaitHandle? _showWait;
     private RegisteredWaitHandle? _quitWait;
     private bool _updatePromptShown;
@@ -177,6 +182,10 @@ internal sealed class MainForm : Form, IShell
         }
         await RefreshAsync();
         _hostsTimer.Start();
+        StartEvergreenWatcher();
+        _updateTimer.Tick += async (_, _) => await NotifyAppUpdateAsync();
+        _updateTimer.Start();
+        _ = NotifyAppUpdateAsync();
 
         // Started a newer exe than the Program Files copy: offer to update it right away.
         var outdated = Current?.Problems.FirstOrDefault(p => p.Action == ProblemAction.UpdateInstall);
@@ -208,6 +217,11 @@ internal sealed class MainForm : Form, IShell
         _tray.BalloonTipClicked += (_, _) =>
         {
             ShowFromTray();
+            if (_tray?.Tag is UpdateBalloon)
+            {
+                _ = CheckAppUpdateAsync();
+                return;
+            }
             ShowTab(0);
             if (_tray?.Tag is string exe) _apps.SelectApp(exe);
         };
@@ -253,6 +267,75 @@ internal sealed class MainForm : Form, IShell
             return;
         }
         base.OnFormClosing(e);
+    }
+
+    // ---- Evergreen watcher & update notice ------------------------------------------------------
+
+    /// <summary>Blocks a new Evergreen version within seconds while the app runs (the task covers the rest).</summary>
+    private void StartEvergreenWatcher()
+    {
+        if (_evergreenWatcher != null) return;
+        _evergreenWatcher = new EvergreenWatcher();
+        _evergreenWatcher.Changed += () =>
+        {
+            try { BeginInvoke(new Action(() => _ = SyncEvergreenAsync())); } catch { /* closing */ }
+        };
+        _evergreenWatcher.Start();
+    }
+
+    private async Task SyncEvergreenAsync()
+    {
+        if (_busy || _evergreenSyncPending)
+        {
+            _evergreenWatcher?.Kick(); // try again when the current work is done
+            return;
+        }
+        _evergreenSyncPending = true;
+        try
+        {
+            Log.Info(L.T("log.evergreenChanged"));
+            var before = Current?.Evergreen.Select(e => e.Version).ToHashSet() ?? new HashSet<string>();
+            var result = await Task.Run(() => Guard.SyncFirewall());
+            await RefreshAsync();
+            var added = Current?.Evergreen.Select(e => e.Version).Where(v => !before.Contains(v)).ToList() ?? new List<string>();
+            if (result.Added > 0 && added.Count > 0 && _tray != null && !(Visible && WindowState != FormWindowState.Minimized))
+            {
+                _tray.Tag = null;
+                _tray.ShowBalloonTip(6000, L.T("tray.evergreenTitle"), L.F("tray.evergreenText", string.Join(", ", added)),
+                    ToolTipIcon.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex.Message);
+        }
+        finally
+        {
+            _evergreenSyncPending = false;
+        }
+    }
+
+    /// <summary>In the notification area: once a day, a notice when a newer WebView2 Guard is published.</summary>
+    private async Task NotifyAppUpdateAsync()
+    {
+        var settings = Settings.Load();
+        if (_tray == null || !settings.NotifyAppUpdates || !Installer.IsSingleFile) return;
+        if (settings.LastAppCheck is { } last && DateTime.Now - last < TimeSpan.FromHours(20)) return;
+        settings.LastAppCheck = DateTime.Now;
+        settings.Save();
+        try
+        {
+            var release = await AppUpdater.LatestAsync();
+            if (release == null || !AppUpdater.IsNewer(release) || _tray == null) return;
+            Log.Info(L.F("log.appUpdateAvailable", release.Version));
+            _tray.Tag = UpdateBalloon;
+            _tray.ShowBalloonTip(10000, L.T("tray.updateTitle"), L.F("tray.updateText", release.Version, AppVersion.Current),
+                ToolTipIcon.Info);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(L.F("err.updateCheck", ex.Message));
+        }
     }
 
     private void OnNewHostsDetected(IReadOnlyList<string> names)
@@ -354,6 +437,10 @@ internal sealed class MainForm : Form, IShell
         DisposeTray();
         _hostsTimer.Stop();
         _hostsTimer.Dispose();
+        _updateTimer.Stop();
+        _updateTimer.Dispose();
+        _evergreenWatcher?.Dispose();
+        _evergreenWatcher = null;
         base.OnFormClosed(e);
     }
 
@@ -433,6 +520,15 @@ internal sealed class MainForm : Form, IShell
             _notifyItem.Checked = st.NotifyNewApps;
         };
         _menu.Items.Add(_notifyItem);
+        _notifyUpdatesItem = new ToolStripMenuItem(L.T("menu.notifyUpdates")) { Checked = settings.NotifyAppUpdates };
+        _notifyUpdatesItem.Click += (_, _) =>
+        {
+            var st = Settings.Load();
+            st.NotifyAppUpdates = !st.NotifyAppUpdates;
+            st.Save();
+            _notifyUpdatesItem.Checked = st.NotifyAppUpdates;
+        };
+        _menu.Items.Add(_notifyUpdatesItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(L.T("menu.undo"), null, (_, _) => _ = UndoAsync());
         _menu.Items.Add(new ToolStripSeparator());
@@ -695,6 +791,7 @@ internal sealed class MainForm : Form, IShell
         await RunAsync(() => result = ConfigTransfer.Apply(config), status: L.T("status.import"));
         if (result == null) return;
         if (_notifyItem != null) _notifyItem.Checked = Settings.Load().NotifyNewApps;
+        if (_notifyUpdatesItem != null) _notifyUpdatesItem.Checked = Settings.Load().NotifyAppUpdates;
         var text = L.F("msg.imported", result.Allowed, result.Added);
         if (result.Skipped.Count > 0) text += "\n\n" + L.T("msg.importSkipped") + "\n" + string.Join("\n", result.Skipped);
         MessageBox.Show(this, text, "WebView2 Guard", MessageBoxButtons.OK,

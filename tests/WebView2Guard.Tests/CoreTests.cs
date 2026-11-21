@@ -200,3 +200,16 @@ public class ConfigTransferTests
         Assert.Throws<InvalidOperationException>(() => ConfigTransfer.Parse(json));
 }
 
+public class EvergreenWatcherTests
+{
+    [Theory]
+    [InlineData(@"C:\EW\Application\158.0.4370.33", true)]
+    [InlineData(@"C:\EW\Application\158.0.4370.33\msedgewebview2.exe", true)]
+    [InlineData(@"C:\EW\Application\158.0.4370.33\MSEDGEWEBVIEW2.EXE", true)]
+    [InlineData(@"C:\EW\Application\158.0.4370.33\msedge.dll", false)]
+    [InlineData(@"C:\EW\Application\158.0.4370.33\Locales\en-US.pak", false)]
+    [InlineData(@"C:\Other\158.0.4370.33", false)]
+    public void IsRelevant(string path, bool expected) =>
+        Assert.Equal(expected, EvergreenWatcher.IsRelevant(@"C:\EW\Application", path));
+}
+

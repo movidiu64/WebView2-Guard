@@ -161,6 +161,23 @@ jobs:
           Start-Sleep 5
           if ($ui.HasExited) { throw "window: the app exited with $($ui.ExitCode)" }
           Write-Host "window: '$($ui.MainWindowTitle)' open"
+
+          # While the app runs, a new Evergreen version is blocked within seconds, and its rule goes
+          # when the version is removed (a copy of the real exe stands in for a Windows update).
+          if ($evergreen.Count -gt 0) {
+            $fake = Join-Path (Split-Path (Split-Path $evergreen[0].FullName)) '999.0.0.1'
+            New-Item -ItemType Directory -Force $fake | Out-Null
+            Copy-Item $evergreen[0].FullName $fake
+            $t = 0
+            while ($t -lt 60 -and -not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like '*999.0.0.1*' })) { Start-Sleep 2; $t += 2 }
+            if (-not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like '*999.0.0.1*' })) { throw 'watcher: no block rule for a new Evergreen version after 60 s' }
+            Write-Host "watcher: new Evergreen version blocked after about $t s"
+            Remove-Item $fake -Recurse -Force
+            $t = 0
+            while ($t -lt 60 -and (Rules | Where-Object { $_.Name -like '*999.0.0.1*' })) { Start-Sleep 2; $t += 2 }
+            if (Rules | Where-Object { $_.Name -like '*999.0.0.1*' }) { throw 'watcher: the rule of a removed version is still there after 60 s' }
+            Write-Host "watcher: rule removed after about $t s"
+          }
           Stop-Process -Id $ui.Id -Force
 
           # 7. A real WebView2 app (tests/WebView2Probe): offline on Evergreen, online on the allowed
@@ -206,7 +223,7 @@ jobs:
             Get-Content "$env:ProgramData\WebView2Guard\guard.log" | Write-Host
             Write-Warning 'guard.log has errors (expected ones come from the negative tests)'
           }
-          Write-Host 'install, runtime, allow, domains, export/import, window, WebView2 app, uninstall: ok'
+          Write-Host 'install, runtime, allow, domains, export/import, window, Evergreen watcher, WebView2 app, uninstall: ok'
 
       # Artifacts count against the account's shared storage: keep them briefly. Releases stay.
       - uses: actions/upload-artifact@v5
