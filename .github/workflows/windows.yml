@@ -211,6 +211,37 @@ jobs:
           $r = Probe 'https://example.com/'
           if ($r.success -or $r.browserPath -like "$fixed*") { throw 'blocking again did not take effect' }
 
+          # EXPERIMENT (strict mode): '*' -> a blocked copy of the Fixed runtime; does a per-exe value win over '*'?
+          try {
+            $blocked = "$dir\Runtime\Blocked\x64"
+            New-Item -ItemType Directory -Force $blocked | Out-Null
+            robocopy "$dir\Runtime\x64" $blocked /E /NFL /NDL /NJH /NJS /NP | Out-Null
+            icacls $blocked /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /Q | Out-Null
+            New-NetFirewallRule -Name 'EXP-Blocked' -DisplayName 'EXP Blocked' -Direction Outbound -Action Block -Program "$blocked\msedgewebview2.exe" | Out-Null
+            New-Item -Force "$pol\BrowserExecutableFolder" | Out-Null
+            Set-ItemProperty "$pol\BrowserExecutableFolder" -Name '*' -Value $blocked
+            Write-Host "EXP 1: only '*' -> Blocked"
+            $r = Probe 'https://example.com/'
+            Write-Host "EXP 1 result: browser=$($r.browserPath) success=$($r.success)"
+            Set-ItemProperty "$pol\BrowserExecutableFolder" -Name 'WebView2Probe.exe' -Value "$dir\Runtime\x64"
+            Write-Host "EXP 2: '*' -> Blocked and WebView2Probe.exe -> Allowed"
+            $r = Probe 'https://example.com/'
+            Write-Host "EXP 2 result: browser=$($r.browserPath) success=$($r.success)"
+            Set-ItemProperty "$pol\BrowserExecutableFolder" -Name 'webview2probe.EXE' -Value "$dir\Runtime\x64"
+            Remove-ItemProperty "$pol\BrowserExecutableFolder" -Name 'WebView2Probe.exe'
+            Write-Host "EXP 3: case-different exe name"
+            $r = Probe 'https://example.com/'
+            Write-Host "EXP 3 result: browser=$($r.browserPath) success=$($r.success)"
+            Remove-ItemProperty "$pol\BrowserExecutableFolder" -Name 'webview2probe.EXE'
+            Remove-ItemProperty "$pol\BrowserExecutableFolder" -Name '*'
+            Remove-NetFirewallRule -Name 'EXP-Blocked'
+            Remove-Item $blocked -Recurse -Force
+            Write-Host "EXP 4: hardlink copy"
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\hl" | Out-Null
+            fsutil hardlink create "$env:RUNNER_TEMP\hl\a.exe" "$dir\Runtime\x64\msedgewebview2.exe"
+            Write-Host "EXP 4: fsutil exit $LASTEXITCODE (different volume expected to fail)"
+          } catch { Write-Warning "EXP failed: $_" }
+
           # 8. Sync, then uninstall: nothing of ours is left.
           Guard '--sync' | Out-Null
           Guard '--uninstall' | Out-Null
