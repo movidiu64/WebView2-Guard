@@ -238,6 +238,7 @@ jobs:
             Remove-ItemProperty "$pol\BrowserExecutableFolder" -Name '*'
             $probe = (Resolve-Path probe/WebView2Probe.exe).Path
             Remove-NetFirewallRule -Name 'EXP-Blocked'
+            Start-Sleep 5
             Remove-Item "$dir\Runtime\Blocked" -Recurse -Force
             Write-Host "EXP: Allowed still intact: $(Test-Path "$src\msedgewebview2.exe")"
           } catch { Write-Warning "EXP failed: $_" }
