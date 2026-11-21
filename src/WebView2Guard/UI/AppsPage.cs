@@ -265,7 +265,7 @@ internal sealed class AppsPage : UserControl
                 if (c is Label l && l.AutoSize) l.MaximumSize = new Size(Inner, 0);
         }
 
-        public new void Show(HostRow? r)
+        public void Show(HostRow? r)
         {
             _stack.SuspendLayout();
             foreach (Control c in _stack.Controls.Cast<Control>().ToList()) c.Dispose();

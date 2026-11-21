@@ -1,5 +1,6 @@
 // WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
 
+using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using static WebView2Guard.UI.Theme;
 
@@ -36,6 +37,7 @@ internal sealed class GuardButton : Button
     private static bool IsFilled(ButtonKind k) =>
         k is ButtonKind.Primary or ButtonKind.WarnFilled or ButtonKind.DangerFilled;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public ButtonKind Kind
     {
         get => _kind;
@@ -48,6 +50,7 @@ internal sealed class GuardButton : Button
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string? Glyph
     {
         get => _glyph;
@@ -55,6 +58,7 @@ internal sealed class GuardButton : Button
     }
 
     /// <summary>Icon-only button: shows just the glyph; the text becomes the accessible name / tooltip.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IconOnly
     {
         get => _iconOnly;
@@ -171,12 +175,14 @@ internal class Card : Panel
         Margin = P(0, 0, 0, 12);
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Color Fill
     {
         get => _fill;
         set { _fill = value; BackColor = value; Invalidate(); }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Color Stroke
     {
         get => _stroke;
@@ -261,6 +267,7 @@ internal sealed class TabStrip : Control
         Invalidate();
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int Selected
     {
         get => _selected;
