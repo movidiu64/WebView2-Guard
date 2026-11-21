@@ -29,18 +29,22 @@ public static class SyncTask
 
     private static string Target => "-TaskPath " + PowerShell.Q(TaskPath) + " -TaskName " + PowerShell.Q(TaskName);
 
-    public static SyncTaskStatus Query()
+    /// <summary>PowerShell that prints the task state as JSON.</summary>
+    public static string QueryScript =>
+        "$t=Get-ScheduledTask " + Target + " -ErrorAction SilentlyContinue;" +
+        "if($t){$i=$t|Get-ScheduledTaskInfo;$x=$t.Actions|Select-Object -First 1;" +
+        "[pscustomobject]@{Exists=$true;State=[string]$t.State;" +
+        "LastRun=$(if($i.LastRunTime -and $i.LastRunTime.Year -gt 2000){$i.LastRunTime.ToString('o')}else{''});" +
+        "LastResult=[int64]$i.LastTaskResult;" +
+        "NextRun=$(if($i.NextRunTime){$i.NextRunTime.ToString('o')}else{''});" +
+        "Execute=[string]$x.Execute;Arguments=[string]$x.Arguments}|ConvertTo-Json -Compress}" +
+        "else{'{\"Exists\":false}'}";
+
+    public static SyncTaskStatus Query() => Parse(PowerShell.Run(QueryScript));
+
+    public static SyncTaskStatus Parse(string output)
     {
-        var script =
-            "$t=Get-ScheduledTask " + Target + " -ErrorAction SilentlyContinue;" +
-            "if($t){$i=$t|Get-ScheduledTaskInfo;$x=$t.Actions|Select-Object -First 1;" +
-            "[pscustomobject]@{Exists=$true;State=[string]$t.State;" +
-            "LastRun=$(if($i.LastRunTime -and $i.LastRunTime.Year -gt 2000){$i.LastRunTime.ToString('o')}else{''});" +
-            "LastResult=[int64]$i.LastTaskResult;" +
-            "NextRun=$(if($i.NextRunTime){$i.NextRunTime.ToString('o')}else{''});" +
-            "Execute=[string]$x.Execute;Arguments=[string]$x.Arguments}|ConvertTo-Json -Compress}" +
-            "else{'{\"Exists\":false}'}";
-        var dto = JsonSerializer.Deserialize<Dto>(PowerShell.Run(script)) ?? new Dto();
+        var dto = JsonSerializer.Deserialize<Dto>(output.Trim()) ?? new Dto();
         return new SyncTaskStatus(
             dto.Exists,
             dto.State ?? string.Empty,

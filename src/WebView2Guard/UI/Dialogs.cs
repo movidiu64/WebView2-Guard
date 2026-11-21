@@ -64,10 +64,13 @@ internal abstract class GuardDialog : Form
     }
 }
 
-/// <summary>Installs a Fixed runtime from a .cab and shows each verification step.</summary>
+/// <summary>
+/// Installs a Fixed runtime from a .cab (picked by the user or downloaded from Microsoft) and shows each step.
+/// </summary>
 internal sealed class InstallDialog : GuardDialog
 {
-    private readonly string _cab;
+    private readonly RuntimeDownload? _download;
+    private readonly int _offset; // 1 when the first row is the download step
     private readonly (Label Icon, Label Text)[] _steps;
     private readonly Card _busyCard = new() { Fill = WarnBg, Stroke = WarnBorder, Padding = P(12) };
     private readonly Label _busyText = Ui.Lbl(string.Empty, Body, WarnTextDark, maxWidth: 480);
@@ -75,23 +78,36 @@ internal sealed class InstallDialog : GuardDialog
     private readonly GuardButton _cancel = new(L.T("inst.cancel"));
     private readonly GuardButton _retry = new(L.T("inst.retry"), Glyph.Refresh, ButtonKind.Primary);
     private readonly GuardButton _close = new(L.T("inst.close"), null, ButtonKind.Primary);
+    private string? _cab;
     private int _current = -1;
     private bool _running;
 
     /// <summary>True if anything on disk or in the firewall changed.</summary>
     public bool Changed { get; private set; }
 
-    public InstallDialog(string cabPath)
+    public InstallDialog(string cabPath) : this(cabPath, null) { }
+
+    public InstallDialog(RuntimeDownload download) : this(null, download) { }
+
+    private InstallDialog(string? cabPath, RuntimeDownload? download)
         : base(L.T("inst.title"), Glyph.Download, Accent)
     {
         _cab = cabPath;
-        var file = Ui.Lbl(Path.GetFileName(cabPath), Mono, TextMuted, maxWidth: 510);
+        _download = download;
+        _offset = download != null ? 1 : 0;
+
+        var fileName = download != null
+            ? $"Microsoft.WebView2.FixedVersionRuntime.{download.Version}.{download.Arch.Label()}.cab"
+            : Path.GetFileName(cabPath ?? string.Empty);
+        var file = Ui.Lbl(fileName, Mono, TextMuted, maxWidth: 510);
         file.Margin = P(0, 0, 0, 14);
         BodyPanel.Controls.Add(file);
 
-        var keys = new[] { "inst.step.extract", "inst.step.signature", "inst.step.arch", "inst.step.inUse", "inst.step.replace" };
-        _steps = new (Label, Label)[keys.Length];
-        for (var i = 0; i < keys.Length; i++)
+        var keys = new List<string>();
+        if (download != null) keys.Add("inst.step.download");
+        keys.AddRange(new[] { "inst.step.extract", "inst.step.signature", "inst.step.arch", "inst.step.inUse", "inst.step.replace" });
+        _steps = new (Label, Label)[keys.Count];
+        for (var i = 0; i < keys.Count; i++)
         {
             var icon = Ui.GlyphLabel(Glyph.Circle, TextMuted, 11f);
             icon.Margin = P(0, 1, 10, 0);
@@ -136,8 +152,15 @@ internal sealed class InstallDialog : GuardDialog
         base.OnFormClosing(e);
     }
 
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        if (_download != null) RuntimeUpdater.DeleteDownload(_cab);
+        base.OnFormClosed(e);
+    }
+
     private void Mark(int index, string glyph, Color color, string? text = null)
     {
+        if (index < 0 || index >= _steps.Length) return;
         var (icon, label) = _steps[index];
         icon.Text = glyph;
         icon.ForeColor = color;
@@ -147,7 +170,7 @@ internal sealed class InstallDialog : GuardDialog
 
     private void Advance(InstallProgress p)
     {
-        var index = p.Step switch
+        var index = _offset + (p.Step switch
         {
             InstallStep.Extract => 0,
             InstallStep.Signature => 1,
@@ -155,10 +178,10 @@ internal sealed class InstallDialog : GuardDialog
             InstallStep.InUse => 3,
             InstallStep.Replace => 4,
             _ => 5
-        };
-        for (var i = Math.Max(0, _current); i < Math.Min(index, _steps.Length); i++)
+        });
+        for (var i = Math.Max(_offset, _current); i < Math.Min(index, _steps.Length); i++)
         {
-            var text = i switch
+            var text = (i - _offset) switch
             {
                 1 => L.T("inst.step.signatureOk"),
                 3 => L.T("inst.step.inUseOk"),
@@ -168,8 +191,8 @@ internal sealed class InstallDialog : GuardDialog
         }
         if (p.Step == InstallStep.Architecture)
         {
-            Mark(2, Glyph.Check, OkText, L.F("inst.step.archValue", p.Detail));
-            index = 3;
+            Mark(_offset + 2, Glyph.Check, OkText, L.F("inst.step.archValue", p.Detail));
+            index = _offset + 3;
         }
         if (index < _steps.Length && p.Step != InstallStep.InUse)
             Mark(index, Glyph.Refresh, Accent);
@@ -184,16 +207,29 @@ internal sealed class InstallDialog : GuardDialog
         _busyCard.Visible = false;
         _result.Visible = false;
         UseWaitCursor = true;
-        _current = -1;
-        for (var i = 0; i < _steps.Length; i++) Mark(i, Glyph.Circle, TextMuted);
-        _steps[1].Text.Text = L.T("inst.step.signature");
-        _steps[2].Text.Text = L.T("inst.step.arch");
-        _steps[3].Text.Text = L.T("inst.step.inUse");
+        _current = _offset;
+        for (var i = _offset; i < _steps.Length; i++) Mark(i, Glyph.Circle, TextMuted);
+        _steps[_offset + 1].Text.Text = L.T("inst.step.signature");
+        _steps[_offset + 2].Text.Text = L.T("inst.step.arch");
+        _steps[_offset + 3].Text.Text = L.T("inst.step.inUse");
 
-        var progress = new Progress<InstallProgress>(Advance);
         try
         {
-            var (arch, version) = await Task.Run(() => RuntimeManager.InstallFromCab(_cab, progress));
+            if (_download != null && (_cab == null || !File.Exists(_cab)))
+            {
+                _current = 0;
+                Mark(0, Glyph.Refresh, Accent, L.F("inst.step.downloadPct", 0, 0, "?"));
+                var dl = new Progress<DownloadProgress>(d => Mark(0, Glyph.Refresh, Accent,
+                    L.F("inst.step.downloadPct", d.Percent ?? 0, d.Done / 1048576,
+                        d.Total is { } t ? (t / 1048576).ToString() : "?")));
+                _cab = await RuntimeUpdater.DownloadAsync(_download, dl);
+                Mark(0, Glyph.Check, OkText, L.F("inst.step.downloadOk", _download.Version));
+                _current = _offset;
+            }
+
+            var cab = _cab!;
+            var progress = new Progress<InstallProgress>(Advance);
+            var (arch, version) = await Task.Run(() => RuntimeManager.InstallFromCab(cab, progress));
             Changed = true;
             await Task.Run(() => Guard.SyncFirewall());
             for (var i = 0; i < _steps.Length; i++)
@@ -203,7 +239,7 @@ internal sealed class InstallDialog : GuardDialog
         }
         catch (RuntimeBusyException busy)
         {
-            Mark(3, Glyph.Warning, WarnText, L.T("inst.step.inUseBusy"));
+            Mark(_offset + 3, Glyph.Warning, WarnText, L.T("inst.step.inUseBusy"));
             _busyText.Text = L.T("inst.busy") + Environment.NewLine + Environment.NewLine +
                              string.Join(Environment.NewLine, busy.Processes.Select(p => $"{p.Name} · PID {p.Pid}"));
             _busyCard.Visible = true;
@@ -214,7 +250,7 @@ internal sealed class InstallDialog : GuardDialog
         }
         catch (Exception ex)
         {
-            if (_current >= 0 && _current < _steps.Length) Mark(_current, Glyph.Error, ErrText);
+            Mark(_current, Glyph.Error, ErrText);
             Log.Error(L.F("inst.failed", ex.Message));
             ShowResult(L.F("inst.failed", ex.Message), ErrText);
             Finish(success: false);

@@ -35,8 +35,14 @@ internal sealed class StackCard : Card
         Controls.Add(Body);
     }
 
+    private int _version;
+    private int _measuredVersion = -1;
+    private int _measuredWidth = -1;
+    private int _measuredHeight;
+
     public void SetContent(params Control[] controls)
     {
+        _version++;
         SuspendLayout();
         Body.SuspendLayout();
         foreach (Control c in Body.Controls.Cast<Control>().ToList()) c.Dispose();
@@ -48,6 +54,16 @@ internal sealed class StackCard : Card
 
     /// <summary>Applies wrap widths for <paramref name="width"/> and returns the height the card needs.</summary>
     public int Measure(int width)
+    {
+        // Measuring wraps every label: do it only when the width or the content changed.
+        if (width == _measuredWidth && _version == _measuredVersion) return _measuredHeight;
+        _measuredWidth = width;
+        _measuredVersion = _version;
+        _measuredHeight = MeasureCore(width);
+        return _measuredHeight;
+    }
+
+    private int MeasureCore(int width)
     {
         var cw = Math.Max(S(120), width - Padding.Horizontal);
         Body.Location = new Point(Padding.Left, Padding.Top);
@@ -122,12 +138,28 @@ internal sealed class CardGrid : Panel
 {
     private readonly List<Control[]> _rows = new();
     private bool _inLayout;
+    private bool _dirty = true;
+    private int _lastWidth = -1;
 
     public CardGrid()
     {
         AutoScroll = true;
         BackColor = Bg;
         Dock = DockStyle.Fill;
+        DoubleBuffered = true;
+    }
+
+    /// <summary>Content changed: lay out again now if shown, otherwise when the page becomes visible.</summary>
+    public void MarkDirty()
+    {
+        _dirty = true;
+        if (Visible) PerformLayout();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible && _dirty) PerformLayout();
     }
 
     public void SetRows(params Control[][] rows)
@@ -142,6 +174,7 @@ internal sealed class CardGrid : Panel
             _rows.Add(r);
             Controls.AddRange(r);
         }
+        _dirty = true;
         ResumeLayout(false);
         PerformLayout();
     }
@@ -150,12 +183,21 @@ internal sealed class CardGrid : Panel
     {
         base.OnLayout(levent);
         if (_inLayout) return;
+        if (!Visible)
+        {
+            // Children report Visible=false while the page is hidden: lay out once it is shown.
+            _dirty = true;
+            return;
+        }
+        var avail = ClientSize.Width;
+        // Showing/hiding the page or a child repaint also raises Layout: skip unless something really changed.
+        if (avail <= 0 || (!_dirty && avail == _lastWidth)) return;
         _inLayout = true;
         try
         {
+            _dirty = false;
+            _lastWidth = avail;
             var gap = S(12);
-            var avail = ClientSize.Width;
-            if (avail <= 0) return;
             var off = AutoScrollPosition;
             var y = 0;
             foreach (var row in _rows)

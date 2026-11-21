@@ -112,6 +112,11 @@ public sealed class Settings
     /// <summary>"auto", "ro" or "en".</summary>
     public string Language { get; set; } = "auto";
 
+    /// <summary>Let the sync task install newer Fixed runtimes from Microsoft (checked at most once a day).</summary>
+    public bool AutoUpdateRuntime { get; set; }
+
+    public DateTime? LastRuntimeCheck { get; set; }
+
     public static Settings Load()
     {
         try

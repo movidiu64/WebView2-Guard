@@ -21,16 +21,32 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = "${{ github.event.release.tag_name }}"
+          if (-not $ref) { $ref = $env:GITHUB_REF_NAME }
+          if ($ref -match '^v(\d+\.\d+\.\d+)(?:-(.+))?$') { $prefix = $Matches[1]; $suffix = $Matches[2] }
+          else { $prefix = '0.1.0'; $suffix = 'dev' }
+          "prefix=$prefix" >> $env:GITHUB_OUTPUT
+          "suffix=$suffix" >> $env:GITHUB_OUTPUT
+          "Version: $prefix-$suffix"
+
       - name: Publish (framework-dependent, single file)
         run: >
           dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64
           --self-contained false -p:PublishSingleFile=true -o publish/fd
+          -p:VersionPrefix=${{ steps.ver.outputs.prefix }} -p:VersionSuffix=${{ steps.ver.outputs.suffix }}
+          -p:GuardFlavor=fd
 
       - name: Publish (self-contained, single file)
         run: >
           dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64
           --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true -o publish/sc
+          -p:VersionPrefix=${{ steps.ver.outputs.prefix }} -p:VersionSuffix=${{ steps.ver.outputs.suffix }}
+          -p:GuardFlavor=selfcontained
 
       - name: Rename outputs
         shell: pwsh

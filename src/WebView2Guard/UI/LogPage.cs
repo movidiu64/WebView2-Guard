@@ -20,6 +20,7 @@ internal sealed class LogPage : UserControl
     public LogPage()
     {
         BackColor = Bg;
+        DoubleBuffered = true;
 
         _filters = new[]
         {
@@ -80,8 +81,11 @@ internal sealed class LogPage : UserControl
         }
     }
 
+    public bool Loaded { get; private set; }
+
     public void Reload()
     {
+        Loaded = true;
         _entries = Log.ReadRecent();
         Fill();
     }

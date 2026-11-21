@@ -38,6 +38,7 @@ internal static class Program
             return 0;
         }
 
+        AppUpdater.CleanupOld();
         ApplicationConfiguration.Initialize();
         do
         {
@@ -51,6 +52,14 @@ internal static class Program
     private static int RunSync()
     {
         Log.Prefix = "[sync] ";
+        try
+        {
+            RuntimeUpdater.AutoUpdate();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(L.F("log.autoUpdateFailed", ex.Message));
+        }
         try
         {
             Guard.SyncFirewall();

@@ -19,14 +19,17 @@ internal sealed class RuntimePage : UserControl
     private readonly StackCard _x86 = new();
     private readonly StackCard _evergreen = new();
     private readonly StackCard _help = new();
+    private List<RuntimeDownload>? _available;
+    private DateTime? _checkedAt;
 
     public RuntimePage(IShell shell)
     {
         _shell = shell;
         BackColor = Bg;
+        DoubleBuffered = true;
         Controls.Add(_grid);
         _warning.Visible = false;
-        BuildHelp();
+        BindUpdates();
         _grid.SetRows(new Control[] { _warning }, new Control[] { _x64, _x86 }, new Control[] { _evergreen, _help });
     }
 
@@ -56,7 +59,7 @@ internal sealed class RuntimePage : UserControl
         BindRuntime(_x86, s.X86, s);
         BindEvergreen(s);
         ResumeLayout();
-        _grid.PerformLayout();
+        _grid.MarkDirty();
     }
 
     private void BindWarning(GuardSnapshot s)
@@ -93,16 +96,19 @@ internal sealed class RuntimePage : UserControl
         else pill.Set(L.T("pill.notInstalled"), NeutralBg, NeutralText);
         var head = StackCard.Heading(L.F("rt.card.title", rt.Arch.Label()), pill);
 
-        var install = new GuardButton(rt.Installed ? L.T("rt.update") : L.T("rt.install"), Glyph.Download,
-            rt.Installed || s.Hosts.Any(h => h.Access == HostAccess.Allowed && h.Arch.RuntimeFor() == rt.Arch)
-                ? ButtonKind.Primary
-                : ButtonKind.Secondary);
+        var needed = rt.Arch == Arch.X64 ||
+                     s.Hosts.Any(h => h.Access == HostAccess.Allowed && h.Arch.RuntimeFor() == rt.Arch);
+        var online = new GuardButton(rt.Installed ? L.T("rt.checkUpdate") : L.T("rt.downloadInstall"),
+            rt.Installed ? Glyph.Refresh : Glyph.Download,
+            needed ? ButtonKind.Primary : ButtonKind.Secondary);
+        online.Click += async (_, _) => await UpdateFromMicrosoftAsync(rt.Arch);
+        var install = new GuardButton(rt.Installed ? L.T("rt.update") : L.T("rt.install"), Glyph.Document);
         install.Click += async (_, _) => await InstallFromCab();
 
         if (!rt.Installed)
         {
             var note = new WrapLabel(L.T(rt.Arch == Arch.X86 ? "rt.x86Note" : "rt.x64Note"), Body, NeutralText);
-            card.SetContent(head, note, Ui.Row(install));
+            card.SetContent(head, note, Ui.Row(online, install));
             return;
         }
 
@@ -146,7 +152,7 @@ internal sealed class RuntimePage : UserControl
             });
         };
 
-        card.SetContent(head, fields, Ui.Row(install, rollback, remove));
+        card.SetContent(head, fields, Ui.Row(online, install, rollback, remove));
     }
 
     private void BindEvergreen(GuardSnapshot s)
@@ -189,33 +195,117 @@ internal sealed class RuntimePage : UserControl
     private static bool IsBlocked(GuardSnapshot s, EvergreenInstall e) =>
         s.Rules.Any(r => !r.IsAllow && r.Enabled && AppPaths.SamePath(r.ExpandedProgram, e.ExePath));
 
-    private void BuildHelp()
+    /// <summary>"Updates" card: automatic update switch, check now, latest version at Microsoft, manual steps.</summary>
+    private void BindUpdates()
     {
-        var head = StackCard.Heading(L.T("rt.help.title"));
-        var steps = new List<Control> { head };
-        var n = 1;
-        foreach (var key in new[] { "rt.help.step1", "rt.help.step2", "rt.help.step3", "rt.help.step4" })
+        var head = StackCard.Heading(L.T("rt.updates.title"));
+
+        var settings = Settings.Load();
+        var auto = new CheckBox
         {
-            var num = Ui.Lbl(n++ + ".", Strong);
-            num.Margin = P(0, 0, 6, 0);
-            var text = new WrapLabel(L.T(key), Body) { Margin = new Padding(0) };
-            var row = Ui.Row(num, text);
-            row.WrapContents = false;
-            row.Margin = P(0, 0, 0, 8);
-            steps.Add(row);
-        }
+            Text = L.T("rt.updates.auto"),
+            Checked = settings.AutoUpdateRuntime,
+            AutoSize = true,
+            Margin = P(0, 2, 0, 4),
+            BackColor = Color.Transparent
+        };
+        auto.CheckedChanged += (_, _) =>
+        {
+            var st = Settings.Load();
+            st.AutoUpdateRuntime = auto.Checked;
+            st.Save();
+            Log.Info(L.T(auto.Checked ? "log.autoUpdateOn" : "log.autoUpdateOff"));
+        };
+        var autoNote = new WrapLabel(L.T("rt.updates.autoNote"), Small, TextMuted);
+
+        var latest = _available == null
+            ? L.T("rt.updates.notChecked")
+            : string.Join("   ·   ", AppPaths.RuntimeArchs
+                .Select(a => (a, d: RuntimeUpdater.Latest(_available, a)))
+                .Where(t => t.d != null)
+                .Select(t => $"{t.a.Label()} {t.d!.Version}"));
+        var fields = StackCard.Fields(
+            StackCard.Field(L.T("rt.updates.latest"), latest, full: true),
+            StackCard.Field(L.T("rt.updates.lastCheck"),
+                _checkedAt?.ToString("g", CultureInfo.CurrentCulture)
+                ?? settings.LastRuntimeCheck?.ToString("g", CultureInfo.CurrentCulture) ?? "—"),
+            StackCard.Field(L.T("rt.updates.source"), "developer.microsoft.com"));
+
+        var check = new GuardButton(L.T("rt.updates.checkNow"), Glyph.Refresh);
+        check.Click += async (_, _) => await CheckAsync(showResult: true);
         var link = new LinkLabel
         {
             Text = L.T("rt.help.link"),
             AutoSize = true,
             LinkColor = Accent,
             Font = Strong,
-            Margin = P(0, 4, 0, 0),
+            Margin = P(8, 9, 0, 0),
             BackColor = Color.Transparent
         };
         link.LinkClicked += (_, _) => MainForm.OpenUrl(DownloadUrl);
-        steps.Add(link);
-        _help.SetContent(steps.ToArray());
+        var manual = new WrapLabel(L.T("rt.updates.manual"), Small, TextMuted) { Margin = P(0, 6, 0, 0) };
+
+        _help.SetContent(head, auto, autoNote, fields, Ui.Row(check, link), manual);
+        _grid.MarkDirty();
+    }
+
+    /// <summary>Reads the official download list. Returns null on error (already reported).</summary>
+    private async Task<List<RuntimeDownload>?> CheckAsync(bool showResult)
+    {
+        _shell.ShowStatus(L.T("status.checkRuntime"));
+        try
+        {
+            _available = await Task.Run(() => RuntimeUpdater.ListAsync());
+            _checkedAt = DateTime.Now;
+            _shell.ShowIdle();
+            BindUpdates();
+        }
+        catch (Exception ex)
+        {
+            _shell.ShowIdle();
+            Ui.Error(_shell.Window, L.F("err.runtimeCheck", ex.Message));
+            return null;
+        }
+
+        if (showResult && _shell.Current is { } s)
+        {
+            var lines = AppPaths.RuntimeArchs
+                .Select(a => (a, rt: a == Arch.X64 ? s.X64 : s.X86, d: RuntimeUpdater.Latest(_available, a)))
+                .Where(t => t.rt.Installed && t.d != null)
+                .Select(t => RuntimeUpdater.IsNewer(t.d!, t.rt)
+                    ? L.F("rt.updates.newer", t.a.Label(), t.rt.Version ?? "?", t.d!.Version)
+                    : L.F("rt.updates.current", t.a.Label(), t.rt.Version ?? "?"))
+                .ToList();
+            if (lines.Count == 0) lines.Add(L.T("rt.updates.nothingInstalled"));
+            MessageBox.Show(_shell.Window, string.Join(Environment.NewLine, lines), L.T("rt.updates.title"),
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        return _available;
+    }
+
+    /// <summary>Downloads the newest Fixed runtime for <paramref name="arch"/> from Microsoft and installs it.</summary>
+    private async Task UpdateFromMicrosoftAsync(Arch arch)
+    {
+        var list = await CheckAsync(showResult: false);
+        if (list == null || _shell.Current is not { } s) return;
+        var rt = arch == Arch.X64 ? s.X64 : s.X86;
+        var latest = RuntimeUpdater.Latest(list, arch);
+        if (latest == null)
+        {
+            Ui.Error(_shell.Window, L.F("err.noRuntimeForArch", arch.Label()));
+            return;
+        }
+        if (!RuntimeUpdater.IsNewer(latest, rt))
+        {
+            MessageBox.Show(_shell.Window, L.F("rt.updates.current", arch.Label(), rt.Version ?? "?"),
+                L.T("rt.updates.title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!Ui.Confirm(_shell.Window, L.F("confirm.runtimeDownload", arch.Label(), latest.Version, rt.Version ?? "—")))
+            return;
+        using var dlg = new InstallDialog(latest);
+        dlg.ShowDialog(_shell.Window);
+        if (dlg.Changed) await _shell.RefreshAsync();
     }
 
     private async Task InstallFromCab()

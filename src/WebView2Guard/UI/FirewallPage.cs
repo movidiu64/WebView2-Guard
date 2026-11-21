@@ -21,6 +21,7 @@ internal sealed class FirewallPage : UserControl
     {
         _shell = shell;
         BackColor = Bg;
+        DoubleBuffered = true;
 
         var title = Ui.Lbl(L.F("fw.title", FirewallManager.Group), Theme.Heading);
         title.Margin = P(0, 6, 16, 8);
@@ -84,7 +85,7 @@ internal sealed class FirewallPage : UserControl
         _rulesError.Text = s.RulesError != null ? L.F("fw.error", s.RulesError) : string.Empty;
 
         BindTask(s);
-        _grid.PerformLayout();
+        _grid.MarkDirty();
     }
 
     private void BindTask(GuardSnapshot s)

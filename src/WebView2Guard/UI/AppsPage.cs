@@ -29,6 +29,7 @@ internal sealed class AppsPage : UserControl
     {
         _shell = shell;
         BackColor = Bg;
+        DoubleBuffered = true;
         _details = new Details(this);
 
         // toolbar

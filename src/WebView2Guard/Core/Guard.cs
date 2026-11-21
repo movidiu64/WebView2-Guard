@@ -1,5 +1,7 @@
 // WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using WebView2Guard.Localization;
 
 namespace WebView2Guard.Core;
@@ -10,7 +12,7 @@ public enum RuntimeKind { None, Evergreen, Allowed, Other }
 
 public enum OverallState { Active, Warning, Incomplete }
 
-public enum ProblemAction { None, Install, CreateTask, Sync, OpenRuntime, OpenApps }
+public enum ProblemAction { None, Install, UpdateInstall, CreateTask, Sync, OpenRuntime, OpenApps }
 
 public sealed record Problem(OverallState Severity, string Text, ProblemAction Action);
 
@@ -27,6 +29,8 @@ public sealed record HostRow(
     RuntimeKind RuntimeKind,
     DateTime? LastSeen,
     bool NeedsRestart);
+
+public sealed record CollectStep(int Step, int Total, string Text);
 
 public sealed record GuardSnapshot(
     List<HostRow> Hosts,
@@ -102,12 +106,46 @@ public static class Guard
         return RuntimeKind.Other;
     }
 
-    public static GuardSnapshot Collect()
+    public static GuardSnapshot Collect(IProgress<CollectStep>? progress = null)
     {
+        const int total = 4;
+        progress?.Report(new CollectStep(1, total, L.T("status.scanApps")));
         var hosts = CollectHosts();
+
+        progress?.Report(new CollectStep(2, total, L.T("status.readRuntimes")));
         var x64 = RuntimeManager.Get(Arch.X64);
         var x86 = RuntimeManager.Get(Arch.X86);
         var evergreen = RuntimeManager.Evergreen();
+
+        progress?.Report(new CollectStep(3, total, L.T("status.readFirewall")));
+        var (rules, rulesError, task, taskError) = ReadRulesAndTask();
+
+        progress?.Report(new CollectStep(4, total, L.T("status.evaluate")));
+        var problems = Evaluate(hosts, x64, x86, evergreen, rules, rulesError, task);
+        var state = problems.Count == 0 ? OverallState.Active
+            : problems.Any(p => p.Severity == OverallState.Incomplete) ? OverallState.Incomplete
+            : OverallState.Warning;
+
+        var snapshot = new GuardSnapshot(hosts, x64, x86, evergreen, rules, rulesError, task, taskError, state, problems);
+        SnapshotCache.Save(snapshot);
+        return snapshot;
+    }
+
+    /// <summary>Firewall rules and task state in ONE PowerShell start (each start costs ~0.5 s).</summary>
+    private static (List<FwRule> Rules, string? RulesError, SyncTaskStatus? Task, string? TaskError) ReadRulesAndTask()
+    {
+        const string marker = "@@WV2G@@";
+        try
+        {
+            var output = PowerShell.Run(FirewallManager.ListScript + ";Write-Output '" + marker + "';" + SyncTask.QueryScript);
+            var parts = output.Split(marker);
+            if (parts.Length == 2)
+                return (FirewallManager.Parse(parts[0]), null, SyncTask.Parse(parts[1]), null);
+        }
+        catch
+        {
+            // fall back to separate calls so each part reports its own error
+        }
 
         List<FwRule> rules;
         string? rulesError = null;
@@ -118,13 +156,7 @@ public static class Guard
         string? taskError = null;
         try { task = SyncTask.Query(); }
         catch (Exception ex) { taskError = ex.Message; }
-
-        var problems = Evaluate(hosts, x64, x86, evergreen, rules, rulesError, task);
-        var state = problems.Count == 0 ? OverallState.Active
-            : problems.Any(p => p.Severity == OverallState.Incomplete) ? OverallState.Incomplete
-            : OverallState.Warning;
-
-        return new GuardSnapshot(hosts, x64, x86, evergreen, rules, rulesError, task, taskError, state, problems);
+        return (rules, rulesError, task, taskError);
     }
 
     private static List<Problem> Evaluate(List<HostRow> hosts, RuntimeInfo x64, RuntimeInfo x86,
@@ -170,8 +202,12 @@ public static class Guard
             problems.Add(new Problem(OverallState.Warning,
                 L.F("prob.runtimeOld", "x64", x64.Version ?? "?", newestEvergreen.Version), ProblemAction.OpenRuntime));
 
+        var installedVersion = AppVersion.OfFile(AppPaths.InstalledExe);
         if (!File.Exists(AppPaths.InstalledExe))
             problems.Add(new Problem(OverallState.Warning, L.T("prob.notInstalled"), ProblemAction.Install));
+        else if (!AppPaths.IsRunningFromInstallDir && AppVersion.Compare(installedVersion, AppVersion.Current) < 0)
+            problems.Add(new Problem(OverallState.Warning,
+                L.F("prob.installedOlder", installedVersion ?? "?", AppVersion.Current), ProblemAction.UpdateInstall));
         else if (task is { Exists: false })
             problems.Add(new Problem(OverallState.Warning, L.T("prob.noTask"), ProblemAction.CreateTask));
 
@@ -230,4 +266,41 @@ public static class Guard
     }
 
     public static int CountOurPolicies() => PolicyStore.ReadAll().Count(kv => PolicyStore.IsOurs(kv.Value));
+}
+
+/// <summary>Last snapshot on disk, shown immediately at start-up while the real scan runs.</summary>
+public static class SnapshotCache
+{
+    private static string FilePath => Path.Combine(AppPaths.DataDir, "cache.json");
+
+    private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
+
+    public static void Save(GuardSnapshot snapshot)
+    {
+        try
+        {
+            AppPaths.EnsureDataDir();
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(snapshot, Json));
+            File.Move(tmp, FilePath, overwrite: true);
+        }
+        catch
+        {
+            // cache is optional
+        }
+    }
+
+    public static (GuardSnapshot? Snapshot, DateTime SavedAt) Load()
+    {
+        try
+        {
+            if (!File.Exists(FilePath)) return (null, default);
+            var s = JsonSerializer.Deserialize<GuardSnapshot>(File.ReadAllText(FilePath), Json);
+            return (s, File.GetLastWriteTime(FilePath));
+        }
+        catch
+        {
+            return (null, default);
+        }
+    }
 }

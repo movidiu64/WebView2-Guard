@@ -8,7 +8,7 @@ namespace WebView2Guard.Core;
 public static class Installer
 {
     /// <summary>True when built as a single-file app (the exe is everything).</summary>
-    private static bool IsSingleFile =>
+    public static bool IsSingleFile =>
         !File.Exists(Path.Combine(AppContext.BaseDirectory, AppPaths.AppName + ".dll"));
 
     /// <summary>Installs/updates the program files. Returns the installed exe path.</summary>

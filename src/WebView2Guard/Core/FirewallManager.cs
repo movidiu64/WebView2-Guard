@@ -2,15 +2,16 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WebView2Guard.Localization;
 
 namespace WebView2Guard.Core;
 
 public sealed record FwRule(string Name, string DisplayName, string Action, string Program, bool Enabled)
 {
-    public bool IsAllow => Action.Equals("Allow", StringComparison.OrdinalIgnoreCase);
-    public string ExpandedProgram => Environment.ExpandEnvironmentVariables(Program);
-    public bool FileExists => File.Exists(ExpandedProgram);
+    [JsonIgnore] public bool IsAllow => Action.Equals("Allow", StringComparison.OrdinalIgnoreCase);
+    [JsonIgnore] public string ExpandedProgram => Environment.ExpandEnvironmentVariables(Program);
+    [JsonIgnore] public bool FileExists => File.Exists(ExpandedProgram);
 }
 
 public sealed record SyncResult(int Added, int Removed);
@@ -35,16 +36,19 @@ public static class FirewallManager
 
     private sealed record Desired(string Name, string DisplayName, string Action, string Program);
 
-    public static List<FwRule> List()
+    /// <summary>PowerShell that prints the group's rules as JSON.</summary>
+    public static string ListScript =>
+        "$r=@(Get-NetFirewallRule -Group " + PowerShell.Q(Group) + " -ErrorAction SilentlyContinue | ForEach-Object {" +
+        "$a=$_ | Get-NetFirewallApplicationFilter;" +
+        "[pscustomobject]@{Name=$_.Name;DisplayName=$_.DisplayName;Action=[string]$_.Action;" +
+        "Program=[string]$a.Program;Enabled=[string]$_.Enabled}});" +
+        "ConvertTo-Json -InputObject $r -Compress";
+
+    public static List<FwRule> List() => Parse(PowerShell.Run(ListScript));
+
+    public static List<FwRule> Parse(string output)
     {
-        var script =
-            "$r=@(Get-NetFirewallRule -Group " + PowerShell.Q(Group) + " -ErrorAction SilentlyContinue | ForEach-Object {" +
-            "$a=$_ | Get-NetFirewallApplicationFilter;" +
-            "[pscustomobject]@{Name=$_.Name;DisplayName=$_.DisplayName;Action=[string]$_.Action;" +
-            "Program=[string]$a.Program;Enabled=[string]$_.Enabled}});" +
-            "ConvertTo-Json -InputObject $r -Compress";
-        var json = PowerShell.AsJsonArray(PowerShell.Run(script));
-        var dtos = JsonSerializer.Deserialize<List<RuleDto>>(json) ?? new List<RuleDto>();
+        var dtos = JsonSerializer.Deserialize<List<RuleDto>>(PowerShell.AsJsonArray(output)) ?? new List<RuleDto>();
         return dtos.Select(d => new FwRule(
                 d.Name ?? string.Empty,
                 d.DisplayName ?? string.Empty,

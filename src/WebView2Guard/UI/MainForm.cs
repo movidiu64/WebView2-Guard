@@ -1,7 +1,6 @@
 // WebView2 Guard — Copyright (C) 2026 movidiu64. Licensed under the GNU GPL v3 or later.
 
 using System.Diagnostics;
-using System.Reflection;
 using WebView2Guard.Core;
 using WebView2Guard.Localization;
 using static WebView2Guard.UI.Theme;
@@ -12,10 +11,12 @@ internal interface IShell
 {
     GuardSnapshot? Current { get; }
     IWin32Window Window { get; }
-    Task RunAsync(Action work, bool refresh = true);
+    Task RunAsync(Action work, bool refresh = true, string? status = null);
     Task RefreshAsync();
     Task SyncAsync();
     void ShowTab(int index);
+    void ShowStatus(string text, int? value = null, int? max = null);
+    void ShowIdle(string? text = null);
 }
 
 internal sealed class MainForm : Form, IShell
@@ -39,9 +40,16 @@ internal sealed class MainForm : Form, IShell
     public GuardSnapshot? Current { get; private set; }
     public IWin32Window Window => this;
 
-    public static string VersionText =>
-        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-            .Split('+')[0] ?? "0.1.0";
+    public static string VersionText => AppVersion.Current;
+
+    private readonly Label _statusText = Ui.Lbl(string.Empty, Small, TextMuted);
+    private readonly ProgressBar _statusProgress = new()
+    {
+        Style = ProgressBarStyle.Marquee,
+        MarqueeAnimationSpeed = 30,
+        Visible = false
+    };
+    private DateTime? _lastUpdate;
 
     public MainForm()
     {
@@ -89,6 +97,7 @@ internal sealed class MainForm : Form, IShell
 
         // Dock order: the control added last is docked first (topmost).
         Controls.Add(_content);
+        Controls.Add(BuildStatusBar());
         Controls.Add(_tabs);
         Controls.Add(bannerHost);
         Controls.Add(BuildHeader());
@@ -100,8 +109,69 @@ internal sealed class MainForm : Form, IShell
     protected override async void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        // Show the last known state at once; the real scan replaces it a moment later.
+        var (cached, savedAt) = SnapshotCache.Load();
+        if (cached != null)
+        {
+            try
+            {
+                Bind(cached);
+                _statusText.Text = L.F("status.fromCache", savedAt.ToString("g"));
+            }
+            catch
+            {
+                // incompatible cache from an older version: ignore
+            }
+        }
         await RefreshAsync();
         _hostsTimer.Start();
+    }
+
+    private Control BuildStatusBar()
+    {
+        var bar = new Panel { Dock = DockStyle.Bottom, Height = S(30), BackColor = Surface };
+        bar.Paint += (_, e) =>
+        {
+            using var pen = new Pen(Border);
+            e.Graphics.DrawLine(pen, 0, 0, bar.Width, 0);
+        };
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Padding = P(20, 0, 20, 0), BackColor = Surface };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, S(180)));
+        t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _statusText.Anchor = AnchorStyles.Left;
+        _statusText.AutoEllipsis = true;
+        _statusText.Margin = new Padding(0);
+        _statusProgress.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _statusProgress.Height = S(10);
+        _statusProgress.Margin = new Padding(0);
+        t.Controls.Add(_statusText, 0, 0);
+        t.Controls.Add(_statusProgress, 1, 0);
+        bar.Controls.Add(t);
+        return bar;
+    }
+
+    /// <summary>Shows what is running; with value/max a determinate bar, otherwise a moving one.</summary>
+    public void ShowStatus(string text, int? value = null, int? max = null)
+    {
+        _statusText.Text = text;
+        _statusProgress.Visible = true;
+        if (value is { } v && max is { } m && m > 0)
+        {
+            _statusProgress.Style = ProgressBarStyle.Continuous;
+            _statusProgress.Maximum = m;
+            _statusProgress.Value = Math.Clamp(v, 0, m);
+        }
+        else
+        {
+            _statusProgress.Style = ProgressBarStyle.Marquee;
+        }
+    }
+
+    public void ShowIdle(string? text = null)
+    {
+        _statusProgress.Visible = false;
+        _statusText.Text = text ?? (_lastUpdate is { } t ? L.F("status.updatedAt", t.ToString("HH:mm:ss")) : string.Empty);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -170,6 +240,7 @@ internal sealed class MainForm : Form, IShell
         }
         _menu.Items.Add(lang);
         _menu.Items.Add(L.T("menu.dataFolder"), null, (_, _) => OpenFolder(AppPaths.DataDir));
+        _menu.Items.Add(L.T("menu.checkUpdates"), null, (_, _) => _ = CheckAppUpdateAsync());
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(L.T("menu.undo"), null, (_, _) => _ = UndoAsync());
         _menu.Items.Add(new ToolStripSeparator());
@@ -224,8 +295,10 @@ internal sealed class MainForm : Form, IShell
 
     private void SwitchPage(int index)
     {
+        _content.SuspendLayout();
         for (var i = 0; i < _pages.Length; i++) _pages[i].Visible = i == index;
-        if (index == 3) _log.Reload();
+        _content.ResumeLayout(true);
+        if (index == 3 && !_log.Loaded) _log.Reload();
     }
 
     // ---- state -------------------------------------------------------------------------------
@@ -237,12 +310,16 @@ internal sealed class MainForm : Form, IShell
         try
         {
             if (Current == null) _banner.ShowLoading();
-            var snap = await Task.Run(Guard.Collect);
+            var progress = new Progress<CollectStep>(st => ShowStatus(st.Text, st.Step, st.Total));
+            var snap = await Task.Run(() => Guard.Collect(progress));
             Bind(snap);
+            _lastUpdate = DateTime.Now;
+            ShowIdle();
         }
         catch (Exception ex)
         {
             Log.Error(ex.Message);
+            ShowIdle(L.F("status.failed", ex.Message));
             Ui.Error(this, ex.Message);
         }
         finally
@@ -277,17 +354,20 @@ internal sealed class MainForm : Form, IShell
         _firewall.Bind(s);
     }
 
-    public async Task RunAsync(Action work, bool refresh = true)
+    public async Task RunAsync(Action work, bool refresh = true, string? status = null)
     {
         if (_busy) return;
         SetBusy(true);
+        ShowStatus(status ?? L.T("status.working"));
         try
         {
             await Task.Run(work);
+            ShowIdle();
         }
         catch (Exception ex)
         {
             Log.Error(ex.Message);
+            ShowIdle(L.F("status.failed", ex.Message));
             Ui.Error(this, ex.Message);
         }
         finally
@@ -313,10 +393,11 @@ internal sealed class MainForm : Form, IShell
         switch (action)
         {
             case ProblemAction.Install:
+            case ProblemAction.UpdateInstall:
                 await InstallAsync();
                 break;
             case ProblemAction.CreateTask:
-                await RunAsync(SyncTask.Create);
+                await RunAsync(SyncTask.Create, status: L.T("status.createTask"));
                 break;
             case ProblemAction.Sync:
                 await SyncAsync();
@@ -343,7 +424,7 @@ internal sealed class MainForm : Form, IShell
     public async Task SyncAsync()
     {
         if (!ConfirmFirstBlock()) return;
-        await RunAsync(() => Guard.SyncFirewall());
+        await RunAsync(() => Guard.SyncFirewall(), status: L.T("status.sync"));
     }
 
     /// <summary>Copies the app to Program Files, enables the sync task and offers to restart from there.</summary>
@@ -357,7 +438,7 @@ internal sealed class MainForm : Form, IShell
             SyncTask.Create();
             Guard.SyncFirewall();
             installed = true;
-        });
+        }, status: L.T("status.install"));
         if (!installed || AppPaths.IsRunningFromInstallDir) return;
 
         if (Ui.Confirm(this, L.F("msg.installDone", AppPaths.InstallDir)))
@@ -374,6 +455,60 @@ internal sealed class MainForm : Form, IShell
         }
     }
 
+    /// <summary>Checks GitHub for a newer release of this app, downloads it (SHA-256 checked) and restarts.</summary>
+    private async Task CheckAppUpdateAsync()
+    {
+        if (_busy) return;
+        if (!Installer.IsSingleFile)
+        {
+            Ui.Error(this, L.T("err.updateDevBuild"));
+            return;
+        }
+
+        AppRelease? release;
+        ShowStatus(L.T("status.checkApp"));
+        try
+        {
+            release = await AppUpdater.LatestAsync();
+            ShowIdle();
+        }
+        catch (Exception ex)
+        {
+            ShowIdle();
+            Ui.Error(this, L.F("err.updateCheck", ex.Message));
+            return;
+        }
+
+        if (release == null || !AppUpdater.IsNewer(release))
+        {
+            MessageBox.Show(this, L.F("msg.upToDate", AppVersion.Current), "WebView2 Guard",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!Ui.Confirm(this, L.F("confirm.appUpdate", release.Version, AppVersion.Current, AppUpdater.TargetExe)))
+            return;
+
+        var progress = new Progress<DownloadProgress>(p =>
+            ShowStatus(L.F("status.downloadApp", release.Version, p.Percent ?? 0), p.Percent, 100));
+        string? exe = null;
+        await RunAsync(() =>
+        {
+            var file = AppUpdater.DownloadAsync(release, progress).GetAwaiter().GetResult();
+            exe = AppUpdater.Apply(file, release.Version);
+        }, refresh: false, status: L.F("status.downloadApp", release.Version, 0));
+        if (exe == null) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+            Close();
+        }
+        catch (Exception ex)
+        {
+            Ui.Error(this, ex.Message);
+        }
+    }
+
     private async Task UndoAsync()
     {
         var s = Current;
@@ -386,7 +521,7 @@ internal sealed class MainForm : Form, IShell
             Guard.UndoAll(options);
             if (options.Task) Installer.RemoveShortcut();
             ok = true;
-        });
+        }, status: L.T("status.undo"));
         if (ok) MessageBox.Show(this, L.T("undo.done"), "WebView2 Guard", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 }
@@ -486,6 +621,7 @@ internal sealed class Banner : Card
     private static string? ActionText(ProblemAction a) => a switch
     {
         ProblemAction.Install => L.T("action.install"),
+        ProblemAction.UpdateInstall => L.T("action.updateInstall"),
         ProblemAction.CreateTask => L.T("action.createTask"),
         ProblemAction.Sync => L.T("action.sync"),
         ProblemAction.OpenRuntime => L.T("action.openRuntime"),
