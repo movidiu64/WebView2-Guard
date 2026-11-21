@@ -168,6 +168,8 @@ public static class L
         ["err.strictNeedsRuntime"] = ("Modul strict are nevoie de runtime-ul permis x64: instalează-l mai întâi.", "Strict mode needs the allowed x64 runtime: install it first."),
         ["err.strictGlobalExternal"] = ("Alt program a setat deja o politică pentru toate aplicațiile (*): {0}. Modul strict nu o înlocuiește.",
             "Another program already set a policy for all applications (*): {0}. Strict mode does not replace it."),
+        ["err.strictOldInstall"] = ("Copia din Program Files e versiunea {0}, iar aceasta e {1}. Task-ul de sync folosește copia din Program Files și nu cunoaște modul strict: actualizeaz-o întâi (App → Instalează în Program Files).",
+            "The Program Files copy is version {0}; this one is {1}. The sync task runs the Program Files copy, which does not know strict mode: update it first (App → Install to Program Files)."),
         ["err.strictNotApplied"] = ("Modul strict nu s-a putut aplica; vezi jurnalul.", "Strict mode could not be applied; see the log."),
         ["prob.strictInactive"] = ("Modul strict e activat, dar politica pentru toate aplicațiile (*) lipsește.", "Strict mode is on, but the policy for all apps (*) is missing."),
         ["prob.strictNeedsRuntime"] = ("Modul strict are nevoie de runtime-ul permis x64.", "Strict mode needs the allowed x64 runtime."),

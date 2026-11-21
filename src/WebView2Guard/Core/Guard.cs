@@ -299,6 +299,8 @@ public static class Guard
 
     public static SyncResult SyncFirewall()
     {
+        // The window, the command line and the SYSTEM task can sync at the same moment: one at a time.
+        using var gate = SyncGate.Enter();
         // Strict mode: copy first, then its block rule, and only then the "*" policy that sends apps to it.
         StrictMode.Prepare();
         var r = FirewallManager.Sync();
@@ -352,6 +354,42 @@ public static class Guard
 }
 
 /// <summary>Last snapshot on disk, shown immediately at start-up while the real scan runs.</summary>
+/// <summary>Machine-wide lock around a sync (best effort: without access to the mutex, the sync runs anyway).</summary>
+internal sealed class SyncGate : IDisposable
+{
+    private const string Name = @"Global\WebView2Guard.Sync";
+    private Mutex? _mutex;
+    private bool _owned;
+
+    public static SyncGate Enter()
+    {
+        var gate = new SyncGate();
+        try
+        {
+            gate._mutex = new Mutex(false, Name);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (!Mutex.TryOpenExisting(Name, out gate._mutex)) return gate;
+        }
+        try
+        {
+            gate._owned = gate._mutex!.WaitOne(TimeSpan.FromMinutes(3));
+        }
+        catch (AbandonedMutexException)
+        {
+            gate._owned = true; // the other process died mid-sync: the sync is idempotent
+        }
+        return gate;
+    }
+
+    public void Dispose()
+    {
+        if (_owned) _mutex?.ReleaseMutex();
+        _mutex?.Dispose();
+    }
+}
+
 public static class SnapshotCache
 {
     private static string FilePath => Path.Combine(AppPaths.DataDir, "cache.json");

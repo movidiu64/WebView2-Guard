@@ -56,6 +56,11 @@ public static class StrictMode
         var target = PolicyTarget();
         if (target != null && !IsBlockedCopy(target))
             throw new InvalidOperationException(L.F("err.strictGlobalExternal", target));
+        // The SYSTEM task runs the Program Files copy: an older one does not know the blocked copy and would
+        // remove its rule at the next sync.
+        var installed = AppVersion.OfFile(AppPaths.InstalledExe);
+        if (installed != null && !AppPaths.IsRunningFromInstallDir && AppVersion.Compare(installed, AppVersion.Current) < 0)
+            throw new InvalidOperationException(L.F("err.strictOldInstall", installed, AppVersion.Current));
         var s = Settings.Load();
         s.StrictMode = true;
         s.Save();

@@ -108,6 +108,9 @@ public static class FirewallManager
         }
         foreach (var d in desired.Where(y => !existing.Any(x => Matches(x, y))))
         {
+            // A rule with this name may exist without showing in the group (made by another sync a moment ago,
+            // or moved by another firewall tool): replace it instead of failing with "already exists".
+            sb.Append("Remove-NetFirewallRule -Name ").Append(PowerShell.Q(d.Name)).Append(" -ErrorAction SilentlyContinue;");
             sb.Append("New-NetFirewallRule -Name ").Append(PowerShell.Q(d.Name))
                 .Append(" -DisplayName ").Append(PowerShell.Q(d.DisplayName))
                 .Append(" -Group ").Append(PowerShell.Q(Group))

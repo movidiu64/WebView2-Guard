@@ -219,6 +219,12 @@ jobs:
           $copy = Value BrowserExecutableFolder '*'
           if ($copy -notlike "$dir\Runtime\Blocked\*") { throw "strict: * -> $copy" }
           if (-not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like 'WV2G-BlockCopy-*' })) { throw 'strict: no block rule for the copy' }
+          # Two syncs at the same moment (window + SYSTEM task) must not trip over each other.
+          Remove-NetFirewallRule -Name 'WV2G-BlockCopy-*' -ErrorAction SilentlyContinue
+          $p1 = Start-Process $exe -ArgumentList '--sync' -PassThru; $p2 = Start-Process $exe -ArgumentList '--sync' -PassThru
+          $p1.WaitForExit(120000) | Out-Null; $p2.WaitForExit(120000) | Out-Null
+          if ($p1.ExitCode -ne 0 -or $p2.ExitCode -ne 0) { throw "parallel sync: exit codes $($p1.ExitCode), $($p2.ExitCode)" }
+          if (@(Rules | Where-Object { $_.Name -like 'WV2G-BlockCopy-*' }).Count -ne 1) { throw 'parallel sync: copy rule not restored once' }
           $links = @(fsutil hardlink list "$copy\msedgewebview2.exe")
           if ($links.Count -lt 2) { throw "strict: the copy is not hard-linked ($links)" }
           $r = Probe 'https://example.com/'
