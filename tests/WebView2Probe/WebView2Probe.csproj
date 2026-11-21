@@ -9,7 +9,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- MSB3277: the package also ships its WPF control, which this WinForms helper does not use. -->
+    <NoWarn>$(NoWarn);CA1416;MSB3277</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

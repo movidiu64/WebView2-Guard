@@ -186,7 +186,7 @@ Exit codes: 0 done, 1 failed (the reason is printed and written to the log), 2 w
 
 ## How the project is built
 
-One C# project (`src/WebView2Guard`, .NET 10, Windows Forms) and a unit test project (`tests/WebView2Guard.Tests`, xUnit).
+One C# project (`src/WebView2Guard`, .NET 10, Windows Forms), a unit test project (`tests/WebView2Guard.Tests`, xUnit) and a WebView2 test app used by CI (`tests/WebView2Probe`).
 
 | Folder / file | Role |
 |---|---|
@@ -214,7 +214,7 @@ The in-app updater picks the asset by the `GuardFlavor` property (`fd` or `selfc
 
 ## Releasing
 
-`.github/workflows/windows.yml` runs on every push and pull request: unit tests, both builds, then an end-to-end test of the self-contained build on the Windows runner through the command line (install, block rules, the Fixed runtime downloaded from Microsoft, policies, domains, export and import, the window, uninstall).
+`.github/workflows/windows.yml` runs on every push and pull request: unit tests, both builds, then an end-to-end test of the self-contained build on the Windows runner through the command line (install, block rules, the Fixed runtime downloaded from Microsoft, policies, domains, export and import, the window, uninstall). With the firewall on, a small WebView2 app (`tests/WebView2Probe`) must fail to load a page while it runs on the blocked Evergreen runtime, load it once allowed (on the Fixed runtime), resolve only its allowed domains, and go offline again after Block.
 
 - On a branch other than `main`, the builds are published as a draft release named **Test build**, replaced by the next one. Drafts are visible only to the repository owner and the in-app updater ignores them.
 - On `main`, when the version in `WebView2Guard.csproj` (`VersionPrefix`, plus `VersionSuffix` for a pre-release such as `beta.1`) has no release yet, CI creates the `v<version>` tag and publishes the release with that version's `CHANGELOG.md` section as notes. A version with a suffix is published as a pre-release.

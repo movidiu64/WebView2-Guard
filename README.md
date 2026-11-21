@@ -55,7 +55,7 @@ dotnet test tests/WebView2Guard.Tests        # unit tests
 dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-Every push runs the unit tests, builds both variants and tests the app end to end on a Windows runner (install, firewall rules, runtime download, policies, uninstall). A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
+Every push runs the unit tests, builds both variants and tests the app end to end on a Windows runner: install, firewall rules, runtime download, policies, uninstall, and a real WebView2 app that must stay offline while blocked, get online once allowed and reach only its allowed domains. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
 
 ## Support
 
