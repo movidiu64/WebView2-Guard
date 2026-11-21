@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <AssemblyName>WebView2Guard</AssemblyName>
+    <RootNamespace>WebView2Guard</RootNamespace>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <!-- "fd" = framework-dependent, "selfcontained"; set by CI, used to pick the update asset. -->
+    <GuardFlavor Condition="'$(GuardFlavor)' == ''">fd</GuardFlavor>
+    <Product>WebView2 Guard</Product>
+    <Description>Per-application internet whitelist for Microsoft Edge WebView2.</Description>
+    <Copyright>Copyright (C) 2026 Ovidiu (movidiu64). Licensed under the GNU GPL v3.</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- CA1416: the whole app is Windows-only. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="Flavor" Value="$(GuardFlavor)" />
+  </ItemGroup>
+
+</Project>

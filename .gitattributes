@@ -1,0 +1,7 @@
+# Normalize line endings in the repository; binaries are never touched.
+* text=auto
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.zip binary
