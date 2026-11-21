@@ -226,7 +226,14 @@ internal static class Cli
     /// <summary>A GUI exe has no console: use the parent's, unless the output is already redirected.</summary>
     private static void AttachOutput()
     {
-        if (GetStdHandle(StdOutputHandle) != IntPtr.Zero) return;
+        if (GetStdHandle(StdOutputHandle) != IntPtr.Zero)
+        {
+            // Redirected to a file or pipe: write UTF-8 without touching any console code page.
+            var utf8 = new System.Text.UTF8Encoding(false);
+            Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
+            Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
+            return;
+        }
         AttachConsole(AttachParentProcess);
     }
 }

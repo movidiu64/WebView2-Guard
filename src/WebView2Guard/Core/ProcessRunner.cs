@@ -56,7 +56,10 @@ public static class PowerShell
     public static string Run(string script, int timeoutMs = 180_000)
     {
         var full = "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';" +
-                   "[Console]::OutputEncoding=[Text.Encoding]::UTF8;" + script;
+                   "[Console]::OutputEncoding=[Text.Encoding]::UTF8;" + script +
+                   // A suppressed error (-ErrorAction SilentlyContinue, e.g. removing a task that does not exist)
+                   // still makes powershell.exe exit with 1; real errors stop the script before this line.
+                   "\nexit 0";
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(full));
         var r = ProcessRunner.Run(Exe,
             new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded },
