@@ -204,6 +204,11 @@ jobs:
           $r = Probe 'https://example.com/'
           if ($r.browserPath -notlike "$fixed*") { throw "the allowed app ran on $($r.browserPath)" }
           if (-not $r.success) { throw "the allowed app could not load the page: $($r.status) $($r.error)" }
+          # A 32-bit app is allowed on the x64 runtime (no x86 runtime installed).
+          $probe64 = $probe; $probe = (Resolve-Path probe86/WebView2Probe.exe).Path
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$fixed*" -or -not $r.success) { throw "x86 app allowed: $($r.browserPath), success=$($r.success)" }
+          $probe = $probe64
           Guard '--domains WebView2Probe.exe example.org' | Out-Null
           $r = Probe 'https://example.com/'
           if ($r.success) { throw 'domain limit: example.com loaded' }
@@ -238,6 +243,16 @@ jobs:
           if ($r.browserPath -notlike "$fixed\*" -or -not $r.success) { throw "strict: allowed app on $($r.browserPath), success=$($r.success)" }
           Guard '--block WebView2Probe.exe' | Out-Null
           if ((Guard '--status') -notmatch 'Strict mode: on') { throw 'strict: status' }
+          # An update of the allowed runtime: '*' still on the previous version's copy (simulated with an older
+          # copy) must move to the current one at the next sync; the old copy and its rule go once unused.
+          $old = "$dir\Runtime\Blocked\100.0.0.1"
+          New-Item -ItemType Directory -Force $old | Out-Null
+          New-Item -ItemType HardLink -Path "$old\msedgewebview2.exe" -Target "$fixed\msedgewebview2.exe" | Out-Null
+          Set-ItemProperty "$pol\BrowserExecutableFolder" -Name '*' -Value $old
+          Guard '--sync' | Out-Null
+          if ((Value BrowserExecutableFolder '*') -ne $copy) { throw "strict update: * -> $(Value BrowserExecutableFolder '*')" }
+          if (Test-Path $old) { throw 'strict update: the old copy was not removed' }
+          if (Rules | Where-Object { $_.Name -like '*100.0.0.1*' }) { throw 'strict update: the old copy kept its rule' }
           Start-Sleep 5
           Guard '--strict off' | Out-Null
           if (Value BrowserExecutableFolder '*') { throw 'strict off: * policy left' }

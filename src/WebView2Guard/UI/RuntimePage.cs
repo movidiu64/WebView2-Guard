@@ -100,7 +100,7 @@ internal sealed class RuntimePage : UserControl
         var head = StackCard.Heading(L.F("rt.card.title", rt.Arch.Label()), pill);
 
         var needed = rt.Arch == Arch.X64 ||
-                     s.Hosts.Any(h => h.Access == HostAccess.Allowed && h.Arch.RuntimeFor() == rt.Arch);
+                     s.Hosts.Any(h => UsesRuntime(h, rt.Arch));
         var online = new GuardButton(rt.Installed ? L.T("rt.checkUpdate") : L.T("rt.downloadInstall"),
             rt.Installed ? Glyph.Refresh : Glyph.Download,
             needed ? ButtonKind.Primary : ButtonKind.Secondary);
@@ -115,7 +115,7 @@ internal sealed class RuntimePage : UserControl
             return;
         }
 
-        var users = s.Hosts.Count(h => h.Access == HostAccess.Allowed && h.Arch.RuntimeFor() == rt.Arch);
+        var users = s.Hosts.Count(h => UsesRuntime(h, rt.Arch));
         var exe = AppPaths.RuntimeExe(rt.Arch);
         var hasRule = s.Rules.Any(r => r.IsAllow && r.Enabled && AppPaths.SamePath(r.ExpandedProgram, exe));
         var installedAt = rt.Marker?.InstalledAt is { } at && at.Year > 2000
@@ -244,6 +244,9 @@ internal sealed class RuntimePage : UserControl
             list.Add(new WrapLabel(L.T("err.strictNeedsRuntime"), Small, TextMuted));
         _strict.SetContent(list.ToArray());
     }
+
+    private static bool UsesRuntime(HostRow h, Arch a) =>
+        h.Access == HostAccess.Allowed && h.PolicyFolder != null && AppPaths.SamePath(h.PolicyFolder, AppPaths.RuntimeDir(a));
 
     private static bool IsBlocked(GuardSnapshot s, EvergreenInstall e) =>
         s.Rules.Any(r => !r.IsAllow && r.Enabled && AppPaths.SamePath(r.ExpandedProgram, e.ExePath));

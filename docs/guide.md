@@ -62,7 +62,7 @@ The list shows every app that has used WebView2 since WebView2 Guard was install
 | Domains | for allowed apps: *all*, or how many domains are allowed |
 | Running | whether it runs now |
 | Runtime in use | *Evergreen*, *Allowed x64/x86* or *Other runtime*; **restart** when the app still runs on the runtime it had before your last change |
-| Arch | x64 or x86, read from the exe; x86 apps need the x86 runtime |
+| Arch | x64 or x86, read from the exe; x86 apps run on the x64 runtime, or on the x86 one when it is installed |
 | Last seen | when it last started WebView2 |
 
 New apps are marked **new**. **Only running now** and the search box filter the list.
@@ -82,7 +82,7 @@ The list is passed to the app's runtime through the per-exe `AdditionalBrowserAr
 
 ## Runtime
 
-**Allowed runtime · x64 / x86** cards show the installed Fixed version, its signature, the firewall rule, the apps that use it and the previous version kept for rollback. x86 is only needed for 32-bit apps.
+**Allowed runtime · x64 / x86** cards show the installed Fixed version, its signature, the firewall rule, the apps that use it and the previous version kept for rollback. The x86 runtime is optional: 32-bit apps also run on the x64 one, and use the x86 one only when it is installed.
 
 Installing or updating:
 

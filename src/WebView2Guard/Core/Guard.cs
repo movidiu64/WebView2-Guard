@@ -224,7 +224,8 @@ public static class Guard
         foreach (var a in AppPaths.RuntimeArchs)
         {
             var rt = a == Arch.X64 ? x64 : x86;
-            var users = hosts.Where(h => h.Access == HostAccess.Allowed && h.Arch.RuntimeFor() == a).ToList();
+            var users = hosts.Where(h => h.Access == HostAccess.Allowed && h.PolicyFolder != null &&
+                                         AppPaths.SamePath(h.PolicyFolder, AppPaths.RuntimeDir(a))).ToList();
             if (users.Count > 0 && !rt.Installed)
                 problems.Add(new Problem(OverallState.Incomplete,
                     L.F("prob.runtimeMissing", a.Label(), string.Join(", ", users.Select(u => u.ExeName))),

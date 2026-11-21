@@ -16,7 +16,12 @@ public static class ArchExtensions
     };
 
     /// <summary>Runtime flavour used for a host of this architecture (unknown → x64).</summary>
-    public static Arch RuntimeFor(this Arch a) => a == Arch.X86 ? Arch.X86 : Arch.X64;
+    /// <summary>
+    /// The allowed runtime an app is routed to: x64, also for 32-bit apps (verified: a 32-bit app runs on the x64
+    /// Fixed runtime, as on the x64 Evergreen one); the x86 runtime only when it is installed.
+    /// </summary>
+    public static Arch RuntimeFor(this Arch a) =>
+        a == Arch.X86 && File.Exists(AppPaths.RuntimeExe(Arch.X86)) ? Arch.X86 : Arch.X64;
 
     public static Arch FromMachine(ushort machine) => machine switch
     {
