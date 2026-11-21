@@ -54,6 +54,8 @@ internal sealed class MainForm : Form, IShell
     private ToolStripMenuItem? _trayItem;
     private ToolStripMenuItem? _notifyItem;
     private RegisteredWaitHandle? _showWait;
+    private RegisteredWaitHandle? _quitWait;
+    private bool _updatePromptShown;
     private bool _startHidden;
     private bool _started;
     private bool _exiting;
@@ -142,6 +144,11 @@ internal sealed class MainForm : Form, IShell
             {
                 try { BeginInvoke(new Action(ShowFromTray)); } catch { /* closing */ }
             }, null, -1, false);
+        if (_quitWait == null && Program.QuitSignal != null)
+            _quitWait = ThreadPool.RegisterWaitForSingleObject(Program.QuitSignal, (_, _) =>
+            {
+                try { BeginInvoke(new Action(ExitApp)); } catch { /* closing */ }
+            }, null, -1, true);
     }
 
     protected override async void OnShown(EventArgs e)
@@ -170,6 +177,16 @@ internal sealed class MainForm : Form, IShell
         }
         await RefreshAsync();
         _hostsTimer.Start();
+
+        // Started a newer exe than the Program Files copy: offer to update it right away.
+        var outdated = Current?.Problems.FirstOrDefault(p => p.Action == ProblemAction.UpdateInstall);
+        if (outdated != null && !_updatePromptShown && Visible)
+        {
+            _updatePromptShown = true;
+            if (Ui.Confirm(this, L.F("confirm.updateInstall", AppVersion.OfFile(AppPaths.InstalledExe) ?? "?",
+                    AppVersion.Current)))
+                await InstallAsync();
+        }
     }
 
     private void CreateTray()
@@ -333,6 +350,7 @@ internal sealed class MainForm : Form, IShell
     {
         Guard.NewHostsDetected -= OnNewHostsDetected;
         _showWait?.Unregister(null);
+        _quitWait?.Unregister(null);
         DisposeTray();
         _hostsTimer.Stop();
         _hostsTimer.Dispose();

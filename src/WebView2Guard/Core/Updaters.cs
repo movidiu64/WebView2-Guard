@@ -26,6 +26,14 @@ public static class RuntimeUpdater
     public static async Task<List<RuntimeDownload>> ListAsync(CancellationToken ct = default)
     {
         var html = await Net.Client.GetStringAsync(PageUrl, ct);
+        var list = ParseLinks(html);
+        if (list.Count == 0) throw new InvalidOperationException(L.T("err.noRuntimeLinks"));
+        return list;
+    }
+
+    /// <summary>Official .cab links found in the page HTML (escaped "\u002F" or plain "/").</summary>
+    public static List<RuntimeDownload> ParseLinks(string html)
+    {
         var list = new List<RuntimeDownload>();
         foreach (Match m in CabRx.Matches(html))
         {
@@ -41,7 +49,6 @@ public static class RuntimeUpdater
             };
             list.Add(new RuntimeDownload(m.Groups["v"].Value, arch, uri));
         }
-        if (list.Count == 0) throw new InvalidOperationException(L.T("err.noRuntimeLinks"));
         return list.DistinctBy(d => d.Url).ToList();
     }
 

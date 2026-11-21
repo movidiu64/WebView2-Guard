@@ -26,15 +26,39 @@ internal static class Program
             return RunSync();
 
         const string showEventName = @"Global\WebView2Guard.Show";
+        const string quitEventName = @"Global\WebView2Guard.Quit";
         var restarted = args.Any(a => a.Equals("--restarted", StringComparison.OrdinalIgnoreCase));
         var startInTray = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
 
         using var single = new Mutex(true, @"Global\WebView2Guard.UI", out var first);
         if (!first && !restarted)
         {
-            // Already running (maybe hidden in the tray): ask it to show its window and leave.
-            if (EventWaitHandle.TryOpenExisting(showEventName, out var show))
+            var older = OtherInstances().Where(o => AppVersion.Compare(AppVersion.Current, o.Version) > 0).ToList();
+            if (older.Count > 0)
             {
+                // A newer build was started while an older one runs (e.g. in the tray): take over so it can update.
+                if (EventWaitHandle.TryOpenExisting(quitEventName, out var quit))
+                {
+                    using (quit) quit.Set();
+                }
+                else if (MessageBox.Show(L.F("msg.closeOlder", older[0].Version ?? "?", AppVersion.Current),
+                             "WebView2 Guard", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                {
+                    // Versions before the quit signal existed: close them directly.
+                    foreach (var o in older)
+                    {
+                        try { o.Process.Kill(); o.Process.WaitForExit(5000); } catch { /* already gone */ }
+                    }
+                }
+                else
+                {
+                    return 0;
+                }
+                foreach (var o in older) o.Process.Dispose();
+            }
+            else if (EventWaitHandle.TryOpenExisting(showEventName, out var show))
+            {
+                // Same or newer version already running (maybe hidden in the tray): show it and leave.
                 using (show) show.Set();
                 return 0;
             }
@@ -52,7 +76,9 @@ internal static class Program
         }
 
         using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, showEventName);
+        using var quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, quitEventName);
         ShowSignal = showEvent;
+        QuitSignal = quitEvent;
 
         AppUpdater.CleanupOld();
         ApplicationConfiguration.Initialize();
@@ -67,6 +93,39 @@ internal static class Program
 
     /// <summary>Signalled by a second launch: the running instance shows its window.</summary>
     public static EventWaitHandle? ShowSignal { get; private set; }
+
+    /// <summary>Signalled by a newer build: the running (older) instance exits so the new one can take over.</summary>
+    public static EventWaitHandle? QuitSignal { get; private set; }
+
+    /// <summary>Other running WebView2 Guard UI processes (any file name, e.g. the downloaded exe).</summary>
+    private static List<(System.Diagnostics.Process Process, string? Version)> OtherInstances()
+    {
+        var result = new List<(System.Diagnostics.Process, string?)>();
+        foreach (var p in System.Diagnostics.Process.GetProcesses())
+        {
+            var keep = false;
+            try
+            {
+                if (p.Id != Environment.ProcessId &&
+                    p.ProcessName.StartsWith("WebView2Guard", StringComparison.OrdinalIgnoreCase) &&
+                    p.MainModule?.FileName is { } path)
+                {
+                    var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+                    if (info.ProductName == "WebView2 Guard")
+                    {
+                        result.Add((p, info.ProductVersion?.Split('+')[0]));
+                        keep = true;
+                    }
+                }
+            }
+            catch
+            {
+                // no access / exited
+            }
+            if (!keep) p.Dispose();
+        }
+        return result;
+    }
 
     /// <summary>Headless mode used by the scheduled task.</summary>
     private static int RunSync()

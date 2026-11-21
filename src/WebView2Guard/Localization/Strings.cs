@@ -345,6 +345,11 @@ public static class L
         ["log.domainsCleared"] = ("Restricția de domenii pentru {0} a fost eliminată", "Domain restriction removed for {0}"),
         ["status.domains"] = ("Se salvează domeniile permise…", "Saving allowed domains…"),
 
+        ["msg.closeOlder"] = ("Rulează deja WebView2 Guard {0} (probabil în zona de notificare). Îl închid ca să pornească versiunea {1}?",
+            "WebView2 Guard {0} is already running (probably in the notification area). Close it so version {1} can start?"),
+        ["confirm.updateInstall"] = ("Copia din Program Files are versiunea {0}, iar aceasta e {1}.\n\nO actualizez acum? Task-urile programate folosesc copia din Program Files.",
+            "The Program Files copy is version {0}; this one is {1}.\n\nUpdate it now? The scheduled tasks use the Program Files copy."),
+
         // ---- status bar ----
         ["status.scanApps"] = ("Se caută aplicațiile care folosesc WebView2…", "Looking for applications that use WebView2…"),
         ["status.readRuntimes"] = ("Se citesc runtime-urile și politicile…", "Reading runtimes and policies…"),
