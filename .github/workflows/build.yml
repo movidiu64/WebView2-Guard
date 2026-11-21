@@ -50,4 +50,6 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME dist/*.exe dist/SHA256SUMS.txt --generate-notes
+        run: |
+          $pre = if ($env:GITHUB_REF_NAME -like '*-*') { '--prerelease' } else { $null }
+          gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist/*.exe).FullName dist/SHA256SUMS.txt --generate-notes --title "WebView2 Guard $env:GITHUB_REF_NAME" $pre
