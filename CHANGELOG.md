@@ -7,6 +7,16 @@ a new major version may need changes on your side, minor versions add features, 
 
 ## [0.1.1] - 2026-11-21
 
+### Added
+- **Export / import** of the configuration (App menu): the apps in the list, which are allowed and on which runtime, their allowed domains and the settings, to move them to another PC or keep them across a reinstall. Import adds to what is there and lists the apps it had to skip.
+- Command line for scripts, without a window: `--install`, `--runtime download|<file.cab>`, `--allow`, `--block`, `--domains`, `--export`, `--import`, `--status`, `--uninstall`, `--help`. See the [guide](docs/guide.md#command-line).
+
+### Fixed
+- *Uninstall everything* stopped halfway (runtimes and the sync task left in place) when the notification-area mode had never been turned on.
+- Installing the runtime failed with an empty error when WebView2 Guard was started from PowerShell 7. PowerShell errors now show their real text.
+
+## [0.1.0] - 2026-11-21
+
 First public release, after the 0.1.0-beta.1 to beta.6 test builds. Licensed under the GNU GPL v3.
 
 ### Protection
@@ -28,7 +38,3 @@ First public release, after the 0.1.0-beta.1 to beta.6 test builds. Licensed und
 - Checks GitHub Releases for new versions and updates itself after a SHA-256 check.
 - Starting a newer exe while an older version runs closes the older one and offers to update the Program Files copy.
 - Two builds: framework-dependent (needs the .NET 10 Desktop Runtime) and self-contained.
-
-### Configuration and scripting
-- **Export / import** of the configuration (allowed apps, their domains, settings) to move it to another PC or keep it across reinstalls.
-- Command line for scripts: `--install`, `--runtime`, `--allow`, `--block`, `--domains`, `--export`, `--import`, `--status`, `--uninstall`.
