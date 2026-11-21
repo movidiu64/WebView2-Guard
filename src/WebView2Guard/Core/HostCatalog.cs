@@ -143,6 +143,14 @@ public sealed class Settings
 
     public DateTime? LastRuntimeCheck { get; set; }
 
+    /// <summary>In the notification area: say when a newer WebView2 Guard is published (checked once a day).</summary>
+    public bool NotifyAppUpdates { get; set; } = true;
+
+    public DateTime? LastAppCheck { get; set; }
+
+    /// <summary>Every app without its own policy uses a blocked copy of the allowed runtime ("*" policy).</summary>
+    public bool StrictMode { get; set; }
+
     public static Settings Load()
     {
         try

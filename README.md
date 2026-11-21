@@ -22,7 +22,8 @@ Many desktop programs (Autodesk products, Office, Teams, Widgets…) show web pa
 
 ## Features
 
-- 🛡️ **Blocked by default**: every version of the Evergreen runtime (the one Windows updates) gets an outbound block rule, kept current by a scheduled task that runs at startup and every hour, even when the window is closed.
+- 🛡️ **Blocked by default**: every version of the Evergreen runtime (the one Windows updates) gets an outbound block rule, kept current by a scheduled task that runs at startup and every hour, even when the window is closed, and within seconds while the app runs.
+- 🔒 **Strict mode**: every app that is not allowed is moved off Evergreen onto a blocked copy of the runtime whose path never changes, so Windows updates can never open a gap. Works with plain Windows Firewall, no other firewall or background process needed.
 - ✅ **Allow per app**: approved apps are routed to a Fixed Version runtime that has an allow rule, through Microsoft's official per-exe policy. You can split a product: allow the license sign-in, keep the start page offline.
 - 🌐 **Allowed domains**: optionally limit an allowed app to a list of host names (`*.example.com` works); every other name fails to resolve.
 - 🔎 **Sees who uses WebView2**: lists every app that starts the runtime, with its architecture, the runtime it is on and whether it must be restarted. New apps are flagged, and a notification-area icon can tell you about them as they appear.
@@ -55,7 +56,7 @@ dotnet test tests/WebView2Guard.Tests        # unit tests
 dotnet publish src/WebView2Guard/WebView2Guard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-Every push runs the unit tests, builds both variants and tests the app end to end on a Windows runner: install, firewall rules, runtime download, policies, uninstall, and a real WebView2 app that must stay offline while blocked, get online once allowed and reach only its allowed domains. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
+Every push runs the unit tests, builds both variants and tests the app end to end on a Windows runner: install, firewall rules, runtime download, policies, strict mode, uninstall, and a real WebView2 app (64- and 32-bit) that must stay offline while blocked, get online once allowed and reach only its allowed domains. A new version number on `main` publishes the release; see [Releasing](docs/guide.md#releasing).
 
 ## Support
 

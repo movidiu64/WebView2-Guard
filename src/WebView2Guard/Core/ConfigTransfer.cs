@@ -26,6 +26,8 @@ public sealed class SettingsConfig
     public string Language { get; set; } = "auto";
     public bool NotifyNewApps { get; set; } = true;
     public bool AutoUpdateRuntime { get; set; }
+    public bool NotifyAppUpdates { get; set; } = true;
+    public bool StrictMode { get; set; }
 }
 
 /// <summary>The decisions that can be moved to another PC: which apps are allowed, their domains, the settings.</summary>
@@ -86,7 +88,9 @@ public static class ConfigTransfer
             {
                 Language = s.Language,
                 NotifyNewApps = s.NotifyNewApps,
-                AutoUpdateRuntime = s.AutoUpdateRuntime
+                AutoUpdateRuntime = s.AutoUpdateRuntime,
+                NotifyAppUpdates = s.NotifyAppUpdates,
+                StrictMode = s.StrictMode
             }
         };
     }
@@ -160,7 +164,20 @@ public static class ConfigTransfer
             if (s.Language is "auto" or "ro" or "en") st.Language = s.Language;
             st.NotifyNewApps = s.NotifyNewApps;
             st.AutoUpdateRuntime = s.AutoUpdateRuntime;
+            st.NotifyAppUpdates = s.NotifyAppUpdates;
             st.Save();
+            if (s.StrictMode && !st.StrictMode)
+            {
+                try
+                {
+                    Core.StrictMode.Enable();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    skipped.Add(L.T("strict.title") + ": " + ex.Message);
+                    Log.Warn(ex.Message);
+                }
+            }
         }
         Log.Info(L.F("log.configImported", allowed, added, skipped.Count));
         return new ImportResult(allowed, added, skipped);

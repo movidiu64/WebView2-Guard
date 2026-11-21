@@ -36,7 +36,7 @@ internal static class Program
                 result["browserVersion"] = env.BrowserVersionString;
                 await web.EnsureCoreWebView2Async(env);
                 var pid = (int)web.CoreWebView2.BrowserProcessId;
-                result["browserPath"] = Process.GetProcessById(pid).MainModule?.FileName;
+                result["browserPath"] = ImagePath(pid);
 
                 var done = new TaskCompletionSource<CoreWebView2NavigationCompletedEventArgs>();
                 web.CoreWebView2.NavigationCompleted += (_, e) => done.TrySetResult(e);
@@ -66,5 +66,17 @@ internal static class Program
         };
         Application.Run(form);
         return 0;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern bool QueryFullProcessImageName(IntPtr process, int flags, System.Text.StringBuilder name, ref int size);
+
+    /// <summary>Works across bitness (a 32-bit probe cannot read a 64-bit process's module list).</summary>
+    private static string? ImagePath(int pid)
+    {
+        using var p = Process.GetProcessById(pid);
+        var sb = new System.Text.StringBuilder(1024);
+        var size = sb.Capacity;
+        return QueryFullProcessImageName(p.Handle, 0, sb, ref size) ? sb.ToString(0, size) : null;
     }
 }

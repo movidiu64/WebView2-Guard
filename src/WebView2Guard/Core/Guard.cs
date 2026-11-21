@@ -8,7 +8,7 @@ namespace WebView2Guard.Core;
 
 public enum HostAccess { Blocked, Allowed, External }
 
-public enum RuntimeKind { None, Evergreen, Allowed, Other }
+public enum RuntimeKind { None, Evergreen, Allowed, Blocked, Other }
 
 public enum OverallState { Active, Warning, Incomplete }
 
@@ -45,7 +45,8 @@ public sealed record GuardSnapshot(
     SyncTaskStatus? Task,
     string? TaskError,
     OverallState State,
-    List<Problem> Problems);
+    List<Problem> Problems,
+    StrictStatus? Strict = null);
 
 /// <summary>Collects the whole state and performs the user-level actions.</summary>
 public static class Guard
@@ -83,17 +84,19 @@ public static class Guard
             arguments.TryGetValue(name, out var args);
             var domains = DomainRules.Parse(args);
 
-            var access = folder == null ? HostAccess.Blocked
+            var access = folder == null || StrictMode.IsBlockedCopy(folder) ? HostAccess.Blocked
                 : PolicyStore.IsOurs(folder) ? HostAccess.Allowed
                 : HostAccess.External;
 
-            var first = live.FirstOrDefault();
+            // Several instances (an old one still closing, a background helper): the newest decides.
+            var first = live.OrderByDescending(l => l.Started).FirstOrDefault();
             var runtimePath = first?.RuntimeExePath;
             var kind = Classify(runtimePath);
             var arch = first?.Arch is { } a && a != Arch.Unknown ? a : entry?.Arch ?? Arch.Unknown;
 
+            // Only the runtimes we control: an app on its own runtime ("other") does not get better by restarting.
             var needsRestart = first != null &&
-                               ((access == HostAccess.Allowed && kind != RuntimeKind.Allowed) ||
+                               ((access == HostAccess.Allowed && kind is RuntimeKind.Evergreen or RuntimeKind.Blocked) ||
                                 (access == HostAccess.Blocked && kind == RuntimeKind.Allowed));
 
             rows.Add(new HostRow(
@@ -119,10 +122,24 @@ public static class Guard
     private static RuntimeKind Classify(string? runtimeExe)
     {
         if (string.IsNullOrEmpty(runtimeExe)) return RuntimeKind.None;
+        if (StrictMode.IsBlockedCopy(runtimeExe)) return RuntimeKind.Blocked;
         if (AppPaths.IsUnder(runtimeExe, AppPaths.RuntimeRoot)) return RuntimeKind.Allowed;
         if (AppPaths.IsEvergreenPath(runtimeExe)) return RuntimeKind.Evergreen;
         return RuntimeKind.Other;
     }
+
+    /// <summary>The snapshot with a fresh app scan: problems and state are evaluated again (the banner follows).</summary>
+    public static GuardSnapshot WithHosts(GuardSnapshot s, List<HostRow> hosts)
+    {
+        var strict = s.Strict ?? StrictMode.Status();
+        var problems = Evaluate(hosts, s.X64, s.X86, s.Evergreen, s.Rules, s.RulesError, s.Task, strict);
+        return s with { Hosts = hosts, Problems = problems, State = StateOf(problems), Strict = strict };
+    }
+
+    private static OverallState StateOf(List<Problem> problems) =>
+        problems.Count == 0 ? OverallState.Active
+        : problems.Any(p => p.Severity == OverallState.Incomplete) ? OverallState.Incomplete
+        : OverallState.Warning;
 
     public static GuardSnapshot Collect(IProgress<CollectStep>? progress = null)
     {
@@ -139,12 +156,11 @@ public static class Guard
         var (rules, rulesError, task, taskError) = ReadRulesAndTask();
 
         progress?.Report(new CollectStep(4, total, L.T("status.evaluate")));
-        var problems = Evaluate(hosts, x64, x86, evergreen, rules, rulesError, task);
-        var state = problems.Count == 0 ? OverallState.Active
-            : problems.Any(p => p.Severity == OverallState.Incomplete) ? OverallState.Incomplete
-            : OverallState.Warning;
+        var strict = StrictMode.Status();
+        var problems = Evaluate(hosts, x64, x86, evergreen, rules, rulesError, task, strict);
+        var state = StateOf(problems);
 
-        var snapshot = new GuardSnapshot(hosts, x64, x86, evergreen, rules, rulesError, task, taskError, state, problems);
+        var snapshot = new GuardSnapshot(hosts, x64, x86, evergreen, rules, rulesError, task, taskError, state, problems, strict);
         SnapshotCache.Save(snapshot);
         return snapshot;
     }
@@ -178,7 +194,8 @@ public static class Guard
     }
 
     private static List<Problem> Evaluate(List<HostRow> hosts, RuntimeInfo x64, RuntimeInfo x86,
-        List<EvergreenInstall> evergreen, List<FwRule> rules, string? rulesError, SyncTaskStatus? task)
+        List<EvergreenInstall> evergreen, List<FwRule> rules, string? rulesError, SyncTaskStatus? task,
+        StrictStatus strict)
     {
         var problems = new List<Problem>();
 
@@ -207,7 +224,8 @@ public static class Guard
         foreach (var a in AppPaths.RuntimeArchs)
         {
             var rt = a == Arch.X64 ? x64 : x86;
-            var users = hosts.Where(h => h.Access == HostAccess.Allowed && h.Arch.RuntimeFor() == a).ToList();
+            var users = hosts.Where(h => h.Access == HostAccess.Allowed && h.PolicyFolder != null &&
+                                         AppPaths.SamePath(h.PolicyFolder, AppPaths.RuntimeDir(a))).ToList();
             if (users.Count > 0 && !rt.Installed)
                 problems.Add(new Problem(OverallState.Incomplete,
                     L.F("prob.runtimeMissing", a.Label(), string.Join(", ", users.Select(u => u.ExeName))),
@@ -234,8 +252,17 @@ public static class Guard
             problems.Add(new Problem(OverallState.Warning,
                 L.F("prob.needsRestart", string.Join(", ", restart)), ProblemAction.OpenApps));
 
-        if (hosts.Any(h => h.ExeName == "*"))
+        var global = hosts.FirstOrDefault(h => h.ExeName == StrictMode.AllApps);
+        if (global != null && !StrictMode.IsBlockedCopy(global.PolicyFolder))
             problems.Add(new Problem(OverallState.Warning, L.T("prob.globalPolicy"), ProblemAction.OpenApps));
+        if (strict is { Enabled: true, Active: false })
+            problems.Add(new Problem(OverallState.Incomplete,
+                L.T(x64.Installed || strict.Copies.Count > 0 ? "prob.strictInactive" : "prob.strictNeedsRuntime"),
+                x64.Installed || strict.Copies.Count > 0 ? ProblemAction.Sync : ProblemAction.OpenRuntime));
+        if (strict is { Active: true } && rulesError == null && strict.PolicyTarget is { } copy &&
+            !rules.Any(r => !r.IsAllow && r.Enabled &&
+                            AppPaths.SamePath(r.ExpandedProgram, Path.Combine(copy, AppPaths.WebViewExe))))
+            problems.Add(new Problem(OverallState.Incomplete, L.T("prob.strictRuleMissing"), ProblemAction.Sync));
 
         return problems;
     }
@@ -286,7 +313,16 @@ public static class Guard
 
     public static SyncResult SyncFirewall()
     {
+        // The window, the command line and the SYSTEM task can sync at the same moment: one at a time.
+        using var gate = SyncGate.Enter();
+        // Strict mode: copy first, then its block rule, and only then the "*" policy that sends apps to it.
+        StrictMode.Prepare();
         var r = FirewallManager.Sync();
+        if (StrictMode.Apply())
+        {
+            var again = FirewallManager.Sync();
+            r = new SyncResult(r.Added + again.Added, r.Removed + again.Removed);
+        }
         Log.Info(r.Added + r.Removed == 0 ? L.T("log.syncNoChange") : L.F("log.syncDone", r.Added, r.Removed));
         return r;
     }
@@ -297,6 +333,7 @@ public static class Guard
     {
         if (o.Policies)
         {
+            StrictMode.RemoveAll();
             foreach (var kv in PolicyStore.ReadAll().Where(p => PolicyStore.IsOurs(p.Value)))
                 Block(kv.Key);
             foreach (var kv in PolicyStore.ReadArgs().Where(p => DomainRules.IsOurs(p.Value)))
@@ -312,8 +349,18 @@ public static class Guard
             settings.Save();
         }
         if (o.Runtimes)
+        {
             foreach (var a in AppPaths.RuntimeArchs)
                 RuntimeManager.Remove(a);
+            try
+            {
+                if (Directory.Exists(AppPaths.BlockedRoot)) Directory.Delete(AppPaths.BlockedRoot, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(AppPaths.BlockedRoot + ": " + ex.Message); // a copy still in use: delete it after a restart
+            }
+        }
         Log.Info(L.T("log.undoDone"));
     }
 
@@ -321,6 +368,42 @@ public static class Guard
 }
 
 /// <summary>Last snapshot on disk, shown immediately at start-up while the real scan runs.</summary>
+/// <summary>Machine-wide lock around a sync (best effort: without access to the mutex, the sync runs anyway).</summary>
+internal sealed class SyncGate : IDisposable
+{
+    private const string Name = @"Global\WebView2Guard.Sync";
+    private Mutex? _mutex;
+    private bool _owned;
+
+    public static SyncGate Enter()
+    {
+        var gate = new SyncGate();
+        try
+        {
+            gate._mutex = new Mutex(false, Name);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (!Mutex.TryOpenExisting(Name, out gate._mutex)) return gate;
+        }
+        try
+        {
+            gate._owned = gate._mutex!.WaitOne(TimeSpan.FromMinutes(3));
+        }
+        catch (AbandonedMutexException)
+        {
+            gate._owned = true; // the other process died mid-sync: the sync is idempotent
+        }
+        return gate;
+    }
+
+    public void Dispose()
+    {
+        if (_owned) _mutex?.ReleaseMutex();
+        _mutex?.Dispose();
+    }
+}
+
 public static class SnapshotCache
 {
     private static string FilePath => Path.Combine(AppPaths.DataDir, "cache.json");

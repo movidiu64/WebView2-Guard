@@ -15,7 +15,7 @@ internal static class Cli
     public const int Ok = 0, Failed = 1, Usage = 2;
 
     private static readonly string[] Commands =
-        { "--install", "--runtime", "--allow", "--block", "--domains", "--export", "--import", "--status", "--uninstall", "--help", "-h", "/?" };
+        { "--install", "--strict", "--runtime", "--allow", "--block", "--domains", "--export", "--import", "--status", "--uninstall", "--help", "-h", "/?" };
 
     public static bool IsCommand(string[] args) =>
         args.Length > 0 && Commands.Contains(args[0], StringComparer.OrdinalIgnoreCase);
@@ -31,6 +31,7 @@ internal static class Cli
             return cmd switch
             {
                 "--install" => Install(),
+                "--strict" => Strict(rest),
                 "--runtime" => Runtime(rest),
                 "--allow" => Allow(rest),
                 "--block" => Block(rest),
@@ -63,6 +64,7 @@ internal static class Cli
               --tray                          start in the notification area
               --install                       install to Program Files, create the sync task, sync the firewall
               --sync                          sync the firewall rules (and update the runtime if set to)
+              --strict on|off                 every app that is not allowed uses a blocked copy of the runtime
               --runtime download [x64|x86]    download the newest Fixed runtime from Microsoft and install it
               --runtime <file.cab>            install a Fixed runtime package
               --allow <exe> [x64|x86]         let an app use the allowed runtime (default x64)
@@ -85,6 +87,24 @@ internal static class Cli
         var r = Guard.SyncFirewall();
         Console.WriteLine($"Installed to {AppPaths.InstalledExe}; sync task created; rules added {r.Added}, removed {r.Removed}.");
         return Ok;
+    }
+
+    private static int Strict(string[] a)
+    {
+        if (a.Length != 1) return Help();
+        switch (a[0].ToLowerInvariant())
+        {
+            case "on":
+                StrictMode.Enable();
+                Console.WriteLine($"Strict mode on: every app that is not allowed uses {StrictMode.PolicyTarget()}.");
+                return Ok;
+            case "off":
+                StrictMode.Disable();
+                Console.WriteLine("Strict mode off: apps that are not allowed use Evergreen again (blocked by its rules).");
+                return Ok;
+            default:
+                return Help();
+        }
     }
 
     private static int Runtime(string[] a)
@@ -189,6 +209,9 @@ internal static class Cli
         foreach (var rt in new[] { s.X64, s.X86 })
             Console.WriteLine($"  Allowed runtime {rt.Arch.Label()}: {(rt.Installed ? rt.Version : "not installed")}");
         Console.WriteLine($"  Sync task: {(s.Task?.Exists == true ? "on" : "off")}");
+        Console.WriteLine(s.Strict is { Active: true } st
+            ? $"  Strict mode: on ({st.PolicyTarget})"
+            : $"  Strict mode: {(s.Strict?.Enabled == true ? "ON BUT NOT APPLIED" : "off")}");
         foreach (var p in s.Problems) Console.WriteLine($"  ! {p.Text}");
         foreach (var h in s.Hosts.OrderByDescending(h => h.Access == HostAccess.Allowed).ThenBy(h => h.ExeName))
             Console.WriteLine($"  {h.ExeName,-32} {h.Access,-8} {(h.Domains ?? "")}");

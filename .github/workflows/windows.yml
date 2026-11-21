@@ -79,7 +79,9 @@ jobs:
           Get-ChildItem out | Format-Table Name, Length
 
       - name: WebView2 probe (test helper)
-        run: dotnet publish tests/WebView2Probe/WebView2Probe.csproj -c Release -r win-x64 --self-contained false -o probe
+        run: |
+          dotnet publish tests/WebView2Probe/WebView2Probe.csproj -c Release -r win-x64 --self-contained false -o probe
+          dotnet publish tests/WebView2Probe/WebView2Probe.csproj -c Release -r win-x86 --self-contained true -o probe86
 
       # The real thing on the runner, through the command line: install, firewall rules, the Fixed
       # runtime from Microsoft (signature, permissions), policies, domains, export/import, the window,
@@ -161,6 +163,23 @@ jobs:
           Start-Sleep 5
           if ($ui.HasExited) { throw "window: the app exited with $($ui.ExitCode)" }
           Write-Host "window: '$($ui.MainWindowTitle)' open"
+
+          # While the app runs, a new Evergreen version is blocked within seconds, and its rule goes
+          # when the version is removed (a copy of the real exe stands in for a Windows update).
+          if ($evergreen.Count -gt 0) {
+            $fake = Join-Path (Split-Path (Split-Path $evergreen[0].FullName)) '999.0.0.1'
+            New-Item -ItemType Directory -Force $fake | Out-Null
+            Copy-Item $evergreen[0].FullName $fake
+            $t = 0
+            while ($t -lt 60 -and -not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like '*999.0.0.1*' })) { Start-Sleep 2; $t += 2 }
+            if (-not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like '*999.0.0.1*' })) { throw 'watcher: no block rule for a new Evergreen version after 60 s' }
+            Write-Host "watcher: new Evergreen version blocked after about $t s"
+            Remove-Item $fake -Recurse -Force
+            $t = 0
+            while ($t -lt 60 -and (Rules | Where-Object { $_.Name -like '*999.0.0.1*' })) { Start-Sleep 2; $t += 2 }
+            if (Rules | Where-Object { $_.Name -like '*999.0.0.1*' }) { throw 'watcher: the rule of a removed version is still there after 60 s' }
+            Write-Host "watcher: rule removed after about $t s"
+          }
           Stop-Process -Id $ui.Id -Force
 
           # 7. A real WebView2 app (tests/WebView2Probe): offline on Evergreen, online on the allowed
@@ -185,6 +204,11 @@ jobs:
           $r = Probe 'https://example.com/'
           if ($r.browserPath -notlike "$fixed*") { throw "the allowed app ran on $($r.browserPath)" }
           if (-not $r.success) { throw "the allowed app could not load the page: $($r.status) $($r.error)" }
+          # A 32-bit app is allowed on the x64 runtime (no x86 runtime installed).
+          $probe64 = $probe; $probe = (Resolve-Path probe86/WebView2Probe.exe).Path
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$fixed*" -or -not $r.success) { throw "x86 app allowed: $($r.browserPath), success=$($r.success)" }
+          $probe = $probe64
           Guard '--domains WebView2Probe.exe example.org' | Out-Null
           $r = Probe 'https://example.com/'
           if ($r.success) { throw 'domain limit: example.com loaded' }
@@ -194,7 +218,52 @@ jobs:
           $r = Probe 'https://example.com/'
           if ($r.success -or $r.browserPath -like "$fixed*") { throw 'blocking again did not take effect' }
 
-          # 8. Sync, then uninstall: nothing of ours is left.
+          # 8. Strict mode: every app without its own policy runs on the blocked copy (64- and 32-bit), the
+          #    copy is hard-linked, allowed apps keep the allowed runtime, and turning it off cleans up.
+          Guard '--strict on' | Out-Null
+          $copy = Value BrowserExecutableFolder '*'
+          if ($copy -notlike "$dir\Runtime\Blocked\*") { throw "strict: * -> $copy" }
+          if (-not (Rules | Where-Object { $_.Action -eq 'Block' -and $_.Name -like 'WV2G-BlockCopy-*' })) { throw 'strict: no block rule for the copy' }
+          # Two syncs at the same moment (window + SYSTEM task) must not trip over each other.
+          Remove-NetFirewallRule -Name 'WV2G-BlockCopy-*' -ErrorAction SilentlyContinue
+          $p1 = Start-Process $exe -ArgumentList '--sync' -PassThru; $p2 = Start-Process $exe -ArgumentList '--sync' -PassThru
+          $p1.WaitForExit(120000) | Out-Null; $p2.WaitForExit(120000) | Out-Null
+          if ($p1.ExitCode -ne 0 -or $p2.ExitCode -ne 0) { throw "parallel sync: exit codes $($p1.ExitCode), $($p2.ExitCode)" }
+          if (@(Rules | Where-Object { $_.Name -like 'WV2G-BlockCopy-*' }).Count -ne 1) { throw 'parallel sync: copy rule not restored once' }
+          $links = @(fsutil hardlink list "$copy\msedgewebview2.exe")
+          if ($links.Count -lt 2) { throw "strict: the copy is not hard-linked ($links)" }
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$copy*" -or $r.success) { throw "strict: x64 app on $($r.browserPath), success=$($r.success)" }
+          $probe64 = $probe; $probe = (Resolve-Path probe86/WebView2Probe.exe).Path
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$copy*" -or $r.success) { throw "strict: x86 app on $($r.browserPath), success=$($r.success)" }
+          $probe = $probe64
+          Guard '--allow WebView2Probe.exe' | Out-Null
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -notlike "$fixed\*" -or -not $r.success) { throw "strict: allowed app on $($r.browserPath), success=$($r.success)" }
+          Guard '--block WebView2Probe.exe' | Out-Null
+          if ((Guard '--status') -notmatch 'Strict mode: on') { throw 'strict: status' }
+          # An update of the allowed runtime: '*' still on the previous version's copy (simulated with an older
+          # copy) must move to the current one at the next sync; the old copy and its rule go once unused.
+          $old = "$dir\Runtime\Blocked\100.0.0.1"
+          New-Item -ItemType Directory -Force $old | Out-Null
+          New-Item -ItemType HardLink -Path "$old\msedgewebview2.exe" -Target "$fixed\msedgewebview2.exe" | Out-Null
+          Set-ItemProperty "$pol\BrowserExecutableFolder" -Name '*' -Value $old
+          Guard '--sync' | Out-Null
+          if ((Value BrowserExecutableFolder '*') -ne $copy) { throw "strict update: * -> $(Value BrowserExecutableFolder '*')" }
+          if (Test-Path $old) { throw 'strict update: the old copy was not removed' }
+          if (Rules | Where-Object { $_.Name -like '*100.0.0.1*' }) { throw 'strict update: the old copy kept its rule' }
+          Start-Sleep 5
+          Guard '--strict off' | Out-Null
+          if (Value BrowserExecutableFolder '*') { throw 'strict off: * policy left' }
+          if (Test-Path "$dir\Runtime\Blocked") { throw 'strict off: the unused copy was not removed' }
+          if (Rules | Where-Object { $_.Name -like 'WV2G-BlockCopy-*' }) { throw 'strict off: copy rule left' }
+          $r = Probe 'https://example.com/'
+          if ($r.browserPath -like "$dir\*" -or $r.success) { throw "strict off: app on $($r.browserPath), success=$($r.success)" }
+          Guard '--strict on' | Out-Null   # uninstall must clean it up
+          Start-Sleep 5
+
+          # 9. Sync, then uninstall: nothing of ours is left.
           Guard '--sync' | Out-Null
           Guard '--uninstall' | Out-Null
           if (Value BrowserExecutableFolder testhost.exe) { throw 'uninstall: policy left' }
@@ -202,11 +271,13 @@ jobs:
           if ((Rules).Count -ne 0) { throw "uninstall: $((Rules).Count) rules left" }
           if (Get-ScheduledTask -TaskPath '\WebView2Guard\' -ErrorAction SilentlyContinue) { throw 'uninstall: tasks left' }
           if (Test-Path "$dir\Runtime\x64") { throw 'uninstall: runtime left' }
+          if (Value BrowserExecutableFolder '*') { throw 'uninstall: strict-mode policy left' }
+          if (Test-Path "$dir\Runtime\Blocked") { throw 'uninstall: blocked copy left' }
           if (Select-String -Path "$env:ProgramData\WebView2Guard\guard.log" -Pattern 'ERROR' -SimpleMatch -Quiet) {
             Get-Content "$env:ProgramData\WebView2Guard\guard.log" | Write-Host
             Write-Warning 'guard.log has errors (expected ones come from the negative tests)'
           }
-          Write-Host 'install, runtime, allow, domains, export/import, window, WebView2 app, uninstall: ok'
+          Write-Host 'install, runtime, allow, domains, export/import, window, Evergreen watcher, WebView2 app, strict mode, uninstall: ok'
 
       # Artifacts count against the account's shared storage: keep them briefly. Releases stay.
       - uses: actions/upload-artifact@v5

@@ -6,21 +6,35 @@ using System.Text.RegularExpressions;
 
 namespace WebView2Guard.Core;
 
-public sealed record ProcInfo(int Pid, int ParentPid, string Name, string? Path, string? CommandLine);
+public sealed record ProcInfo(int Pid, int ParentPid, string Name, string? Path, string? CommandLine,
+    DateTime Started = default);
 
 /// <summary>A running app that hosts a WebView2 browser process.</summary>
 public sealed record WebViewHost(
-    string ExeName, string? ExePath, int Pid, Arch Arch, string RuntimeExePath, int ProcessCount);
+    string ExeName, string? ExePath, int Pid, Arch Arch, string RuntimeExePath, int ProcessCount,
+    DateTime Started = default);
 
 public static class ProcessScanner
 {
     private static readonly Regex ExeNameArg =
         new(@"--webview-exe-name=(?:""(?<n>[^""]+)""|(?<n>[^\s""]+))", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private const string Columns = "ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine";
+    private const string Columns = "ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, CreationDate";
 
     /// <summary>All processes (expensive: reads every command line). Used only for "is this folder in use".</summary>
     public static Dictionary<int, ProcInfo> Snapshot() => Query(null).ToDictionary(p => p.Pid);
+
+    private static DateTime ParseWmiDate(string? value)
+    {
+        try
+        {
+            return string.IsNullOrEmpty(value) ? default : ManagementDateTimeConverter.ToDateTime(value);
+        }
+        catch
+        {
+            return default;
+        }
+    }
 
     private static List<ProcInfo> Query(string? where)
     {
@@ -37,7 +51,8 @@ public static class ProcessScanner
                     Convert.ToInt32(mo["ParentProcessId"]),
                     (mo["Name"] as string) ?? string.Empty,
                     mo["ExecutablePath"] as string,
-                    mo["CommandLine"] as string));
+                    mo["CommandLine"] as string,
+                    ParseWmiDate(mo["CreationDate"] as string)));
             }
         }
         return list;
@@ -92,7 +107,8 @@ public static class ProcessScanner
                 parentMatches ? parent!.Pid : 0,
                 arch,
                 b.Path ?? string.Empty,
-                1 + children));
+                1 + children,
+                b.Started));
         }
         return result;
     }

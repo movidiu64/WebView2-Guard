@@ -66,7 +66,9 @@ public static class PolicyStore
 
     public static void Set(string exeName, string folder)
     {
-        if (!IsValidExeName(exeName)) throw new ArgumentException("Invalid exe name: " + exeName);
+        // "*" (all apps) is only written by strict mode; user input goes through IsValidExeName.
+        if (exeName != StrictMode.AllApps && !IsValidExeName(exeName))
+            throw new ArgumentException("Invalid exe name: " + exeName);
         Backup();
         using var hklm = Hklm();
         using var key = hklm.CreateSubKey(FolderKey, writable: true);

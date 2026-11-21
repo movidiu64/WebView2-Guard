@@ -16,7 +16,12 @@ public static class ArchExtensions
     };
 
     /// <summary>Runtime flavour used for a host of this architecture (unknown → x64).</summary>
-    public static Arch RuntimeFor(this Arch a) => a == Arch.X86 ? Arch.X86 : Arch.X64;
+    /// <summary>
+    /// The allowed runtime an app is routed to: x64, also for 32-bit apps (verified: a 32-bit app runs on the x64
+    /// Fixed runtime, as on the x64 Evergreen one); the x86 runtime only when it is installed.
+    /// </summary>
+    public static Arch RuntimeFor(this Arch a) =>
+        a == Arch.X86 && File.Exists(AppPaths.RuntimeExe(Arch.X86)) ? Arch.X86 : Arch.X64;
 
     public static Arch FromMachine(ushort machine) => machine switch
     {
@@ -44,6 +49,9 @@ public static class AppPaths
     public static string RuntimeRoot => Path.Combine(InstallDir, "Runtime");
     public static string RuntimeDir(Arch a) => Path.Combine(RuntimeRoot, a.Label());
     public static string RuntimePrevDir(Arch a) => RuntimeDir(a) + ".prev";
+
+    /// <summary>Strict mode: blocked copies of the allowed x64 runtime, one folder per version.</summary>
+    public static string BlockedRoot => Path.Combine(RuntimeRoot, "Blocked");
     public static string RuntimeExe(Arch a) => Path.Combine(RuntimeDir(a), WebViewExe);
 
     public static string DataDir => Path.Combine(

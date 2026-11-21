@@ -217,6 +217,7 @@ internal sealed class AppsPage : UserControl
         {
             RuntimeKind.Evergreen => L.T("rt.evergreen"),
             RuntimeKind.Allowed => L.F("rt.allowed", ArchOfRuntime(r.RuntimeInUse)),
+            RuntimeKind.Blocked => L.T("rt.blockedCopy"),
             RuntimeKind.Other => L.T("rt.other"),
             _ => "—"
         };
